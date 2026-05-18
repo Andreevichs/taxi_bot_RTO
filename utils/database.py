@@ -1,6 +1,6 @@
 import sqlite3
 import logging
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional, List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -16,7 +16,7 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
     
-    # 1. Таблица пользователей
+    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -28,11 +28,11 @@ def init_db():
         )
     ''')
     
-    # 2. Таблица профилей (статистика)
+    # Таблица профилей (статистика РТО)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS profiles (
             user_id INTEGER PRIMARY KEY,
-            total_driving_time INTEGER DEFAULT 0,
+            total_driving_minutes INTEGER DEFAULT 0,
             total_breaks INTEGER DEFAULT 0,
             consecutive_days INTEGER DEFAULT 0,
             last_active_date DATE,
@@ -42,7 +42,7 @@ def init_db():
         )
     ''')
     
-    # 3. Таблица автомобилей
+    # Таблица автомобилей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS cars (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -57,7 +57,7 @@ def init_db():
         )
     ''')
     
-    # 4. Таблица сессий вождения (для РТО)
+    # Таблица сессий вождения (для РТО)
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS driving_sessions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -70,7 +70,7 @@ def init_db():
         )
     ''')
     
-    # 5. Таблица семьи
+    # Таблица семьи
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS family_members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -83,7 +83,7 @@ def init_db():
         )
     ''')
     
-    # 6. Таблица расписаний
+    # Таблица расписаний
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS schedules (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,7 +96,7 @@ def init_db():
         )
     ''')
     
-    # 7. Таблица достижений
+    # Таблица достижений
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS achievements (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -114,7 +114,7 @@ def init_db():
 
 class DatabaseManager:
     def __init__(self):
-        pass # Инициализация происходит при импорте модуля
+        pass
     
     def init_db(self):
         init_db()
@@ -152,7 +152,8 @@ class DatabaseManager:
         return dict(row) if row else None
     
     def update_profile(self, user_id: int, **kwargs):
-        if not kwargs: return
+        if not kwargs:
+            return
         conn = get_connection()
         cursor = conn.cursor()
         fields = ', '.join([f"{k} = ?" for k in kwargs.keys()])
@@ -162,6 +163,36 @@ class DatabaseManager:
         conn.commit()
         conn.close()
     
+    # === РТО: СТАТИСТИКА ЗА СЕГОДНЯ ===
+    def get_today_driving_minutes(self, user_id: int) -> int:
+        """Сколько минут за рулём сегодня (для проверки лимита 9 часов)"""
+        conn = get_connection()
+        cursor = conn.cursor()
+        today = date.today().isoformat()
+        cursor.execute('''
+            SELECT COALESCE(SUM(duration_minutes), 0) as total
+            FROM driving_sessions
+            WHERE user_id = ? AND date(start_time) = ? AND status = 'completed'
+        ''', (user_id, today))
+        row = cursor.fetchone()
+        conn.close()
+        return row['total'] if row else 0
+    
+    def get_week_driving_minutes(self, user_id: int) -> int:
+        """Сколько минут за рулём за неделю (для проверки лимита 56 часов)"""
+        conn = get_connection()
+        cursor = conn.cursor()
+        week_ago = (date.today() - timedelta(days=7)).isoformat()
+        cursor.execute('''
+            SELECT COALESCE(SUM(duration_minutes), 0) as total
+            FROM driving_sessions
+            WHERE user_id = ? AND date(start_time) >= ? AND status = 'completed'
+        ''', (user_id, week_ago))
+        row = cursor.fetchone()
+        conn.close()
+        return row['total'] if row else 0
+    
+    # === АВТО ===
     def add_car(self, user_id: int, brand: str, model: str, plate: str, color: str):
         conn = get_connection()
         cursor = conn.cursor()
@@ -181,25 +212,40 @@ class DatabaseManager:
         conn.close()
         return dict(row) if row else None
     
-    def start_driving_session(self, user_id: int):
+    def get_all_cars(self, user_id: int) -> List[Dict]:
         conn = get_connection()
         cursor = conn.cursor()
+        cursor.execute('SELECT * FROM cars WHERE user_id = ? ORDER BY created_at DESC', (user_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [dict(row) for row in rows]
+    
+    # === СЕССИИ ВОЖДЕНИЯ (РТО) ===
+    def start_driving_session(self, user_id: int) -> bool:
+        """Начать смену. Возвращает False, если уже есть активная."""
+        conn = get_connection()
+        cursor = conn.cursor()
+        
+        # Проверяем, нет ли активной сессии
         cursor.execute('''
-            UPDATE driving_sessions 
-            SET end_time = CURRENT_TIMESTAMP, 
-                duration_minutes = CAST((julianday(CURRENT_TIMESTAMP) - julianday(start_time)) * 24 * 60 AS INTEGER),
-                status = 'interrupted'
+            SELECT id FROM driving_sessions 
             WHERE user_id = ? AND status = 'active'
         ''', (user_id,))
+        if cursor.fetchone():
+            conn.close()
+            return False
         
         cursor.execute('''
             INSERT INTO driving_sessions (user_id, start_time, status)
-            VALUES (?, CURRENT_TIMESTAMP, 'active')
+            VALUES (?, datetime('now'), 'active')
         ''', (user_id,))
+        
         conn.commit()
         conn.close()
+        return True
     
     def stop_driving_session(self, user_id: int) -> int:
+        """Закончить смену. Возвращает длительность в минутах."""
         conn = get_connection()
         cursor = conn.cursor()
         
@@ -217,23 +263,24 @@ class DatabaseManager:
         session_id = row['id']
         start_time = row['start_time']
         
+        # Вычисляем длительность в Python (точнее)
+        start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+        now_dt = datetime.now()
+        duration = int((now_dt - start_dt).total_seconds() / 60)
+        
         cursor.execute('''
             UPDATE driving_sessions 
-            SET end_time = CURRENT_TIMESTAMP,
-                duration_minutes = CAST((julianday(CURRENT_TIMESTAMP) - julianday(?)) * 24 * 60 AS INTEGER),
+            SET end_time = datetime('now'),
+                duration_minutes = ?,
                 status = 'completed'
             WHERE id = ?
-        ''', (start_time, session_id))
+        ''', (duration, session_id))
         
-        cursor.execute('SELECT duration_minutes FROM driving_sessions WHERE id = ?', (session_id,))
-        result = cursor.fetchone()
-        duration = result['duration_minutes'] if result else 0
-        
+        # Обновляем статистику
         if duration > 0:
             cursor.execute('''
                 UPDATE profiles 
-                SET total_driving_time = total_driving_time + ?,
-                    total_breaks = total_breaks + 1
+                SET total_driving_minutes = total_driving_minutes + ?
                 WHERE user_id = ?
             ''', (duration, user_id))
         
@@ -242,28 +289,45 @@ class DatabaseManager:
         return duration
     
     def get_active_session_duration(self, user_id: int) -> int:
+        """Сколько минут идёт текущая смена."""
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute('''
-            SELECT CAST((julianday(CURRENT_TIMESTAMP) - julianday(start_time)) * 24 * 60 AS INTEGER) as duration
-            FROM driving_sessions
+            SELECT start_time FROM driving_sessions
             WHERE user_id = ? AND status = 'active'
             ORDER BY start_time DESC LIMIT 1
         ''', (user_id,))
         row = cursor.fetchone()
         conn.close()
-        return row['duration'] if row else 0
+        
+        if not row:
+            return 0
+        
+        start_dt = datetime.fromisoformat(row['start_time'].replace('Z', '+00:00'))
+        return int((datetime.now() - start_dt).total_seconds() / 60)
     
+    def has_active_session(self, user_id: int) -> bool:
+        """Есть ли активная смена?"""
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT 1 FROM driving_sessions 
+            WHERE user_id = ? AND status = 'active'
+        ''', (user_id,))
+        result = cursor.fetchone()
+        conn.close()
+        return result is not None
+    
+    # === ОЧИСТКА ДАННЫХ ===
     def clear_all_user_data(self, user_id: int):
         conn = get_connection()
         cursor = conn.cursor()
         
-        tables = ['achievements', 'schedules', 'family_members', 'driving_sessions', 'cars', 'profiles', 'users']
+        tables = ['achievements', 'schedules', 'family_members', 
+                  'driving_sessions', 'cars', 'profiles', 'users']
         
-        for table in ['achievements', 'schedules', 'family_members', 'driving_sessions', 'cars', 'profiles']:
+        for table in tables:
             cursor.execute(f'DELETE FROM {table} WHERE user_id = ?', (user_id,))
-        
-        cursor.execute('DELETE FROM users WHERE user_id = ?', (user_id,))
         
         conn.commit()
         conn.close()
