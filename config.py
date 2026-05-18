@@ -8,15 +8,15 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "ВАШ_ТОКЕН_СЮДА")
 TIMEZONE = "Europe/Minsk"
 
 # === РТО ПРАВИЛА БЕЛАРУСЬ ===
-MAX_DAILY_DRIVE = timedelta(hours=9)      # Макс вождения за сутки
-MAX_WEEKLY_DRIVE = timedelta(hours=56)    # Макс вождения за неделю
-MAX_CONTINUOUS_DRIVE = timedelta(hours=4) # Макс без перерыва
-MIN_BREAK = timedelta(minutes=45)         # Минимальный перерыв
-MIN_DAILY_REST = timedelta(hours=11)      # Минимальный ежедневный отдых
-MAX_SHIFT = timedelta(hours=13)           # Макс продолжительность смены
+MAX_DAILY_DRIVE = timedelta(hours=9)
+MAX_WEEKLY_DRIVE = timedelta(hours=56)
+MAX_CONTINUOUS_DRIVE = timedelta(hours=4)
+MIN_BREAK = timedelta(minutes=45)
+MIN_DAILY_REST = timedelta(hours=11)
+MAX_SHIFT = timedelta(hours=13)
 
 # === ПРОГНОЗ ЗАРАБОТКА ===
-DEFAULT_HOURLY_RATE = 25  # BYN/час примерно
+DEFAULT_HOURLY_RATE = 25
 
 # === СЕМЕЙНЫЙ ДОСТУП ===
 MAX_FAMILY_MEMBERS = 3
