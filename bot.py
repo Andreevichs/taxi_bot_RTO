@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 from threading import Thread
 
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
@@ -16,6 +17,20 @@ from telegram.ext import (
     filters,
     JobQueue,
 )
+
+# ==================== FLASK HTTP ENDPOINT (для UptimeRobot) ====================
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def health_check():
+    return "✅ Бот работает!", 200
+
+@flask_app.route("/keepalive")
+def keepalive():
+    return "OK", 200
+
+def run_flask():
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
 
 # ==================== ЛОГИРОВАНИЕ (СРАЗУ!) ====================
 logging.basicConfig(
@@ -116,8 +131,10 @@ def get_conn():
 
 # ==================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ====================
 def now_str():
-    """Текущее время в строке"""
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    """Текущее время в строке (Минск, UTC+3)"""
+    import pytz
+    minsk_tz = pytz.timezone('Europe/Minsk')
+    return datetime.now(minsk_tz).strftime("%Y-%m-%d %H:%M:%S")
 
 
 def str_to_dt(s):
@@ -135,7 +152,11 @@ def format_duration(minutes):
 
 
 def format_time(dt):
-    """Красивый формат времени"""
+    """Красивый формат времени (Минск, UTC+3)"""
+    import pytz
+    if dt.tzinfo is None:
+        minsk_tz = pytz.timezone('Europe/Minsk')
+        dt = minsk_tz.localize(dt)
     return dt.strftime("%d.%m.%Y %H:%M")
 
 
@@ -158,6 +179,7 @@ def check_week_limits(user_id):
     if week_start:
         ws = str_to_dt(week_start)
         if datetime.now() - ws > timedelta(days=7):
+            # Начинаем новую неделю
             reset_week(user_id)
             return {"week_hours": 0, "two_week_hours": two_week_hours, "new_week": True}
 
@@ -1194,6 +1216,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== ГЛАВНАЯ ФУНКЦИЯ ====================
 def main():
     """Запуск бота"""
+    # Запускаем Flask в отдельном потоке (для UptimeRobot)
+    flask_thread = Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+    logger.info("🌐 Flask endpoint запущен для UptimeRobot")
+
     # Создаём event loop для Python 3.14+
     import asyncio
     try:
