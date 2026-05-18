@@ -1192,6 +1192,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ==================== ГЛАВНАЯ ФУНКЦИЯ ====================
 def main():
     """Запуск бота"""
+    # Создаём event loop для Python 3.14+
+    import asyncio
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     # Инициализируем базу
     init_db()
 
