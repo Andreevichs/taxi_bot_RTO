@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     filters, CallbackQueryHandler, ConversationHandler
@@ -40,6 +41,13 @@ def main():
     logger.info("Starting scheduler...")
     auto_scheduler = AutoScheduler()
     auto_scheduler.start()
+
+    # === EVENT LOOP ДЛЯ PYTHON 3.14 ===
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
     application = Application.builder().token(BOT_TOKEN).build()
 
