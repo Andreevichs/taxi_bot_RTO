@@ -14,6 +14,7 @@ from telegram.ext import (
     ConversationHandler,
     MessageHandler,
     filters,
+    JobQueue,
 )
 
 # ==================== НАСТРОЙКИ ====================
@@ -1213,7 +1214,11 @@ def main():
 
     # Запускаем бота
     logger.info("✅ Бот запущен! Ожидаю сообщения...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    try:
+        application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
+    except Exception as e:
+        logger.error(f"❌ Ошибка запуска polling: {e}")
+        raise
 
 
 if __name__ == "__main__":
