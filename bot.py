@@ -18,7 +18,7 @@ from telegram.ext import (
 
 # ==================== НАСТРОЙКИ ====================
 # ЗАМЕНИ ЭТОТ ТОКЕН НА СВОЙ (получить у @BotFather)
-TOKEN = "ВСТАВЬ_СВОЙ_ТОКЕН_ЗДЕСЬ"
+TOKEN = "8898518897:AAGsX4mTNcTf-pqm9X9GUyt7DJ_qNG-9Xb0"
 
 # Пути к файлам
 DB_PATH = os.path.join(os.path.dirname(__file__), "shifts.db")
