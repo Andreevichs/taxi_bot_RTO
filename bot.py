@@ -139,7 +139,11 @@ def main():
     application.add_error_handler(error_handler)
 
     logger.info("Bot is starting polling...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # === ИСПРАВЛЕНИЕ: drop_pending_updates=True убирает конфликт 409 ===
+    application.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=["message", "callback_query", "inline_query"]
+    )
 
 if __name__ == '__main__':
     main()
