@@ -1,107 +1,88 @@
-import os
 import logging
 import asyncio
-from flask import Flask
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackQueryHandler
 from telegram import Update
-from telegram.ext import (
-    Application, CommandHandler, CallbackQueryHandler,
-    MessageHandler, ConversationHandler, filters
-)
-
-from config import BOT_TOKEN
-from handlers.start import start, button_handler
-from handlers.rto import cmd_start_shift, cmd_end_shift, cmd_break_start, cmd_break_end, cmd_status
-from handlers.stats import cmd_stats, cmd_earnings, cmd_achievements, cmd_weather
-from handlers.family import (
-    cmd_family, family_add_start, family_add_done, family_remove,
-    family_del_confirm, ASK_MEMBER_ID
-)
-from handlers.cars import (
-    cmd_cars, car_add, car_add_text, car_default, car_set_default
-)
-from handlers.settings import (
-    cmd_settings, cmd_scheduler, scheduler_set, scheduler_text
-)
 from utils.scheduler import AutoScheduler
+from utils.database import db_manager
+from handlers.start import start_handler, reset_data_handler, restart_handler
+# Импортируем остальные хендлеры (убедись, что файлы существуют)
+try:
+    from handlers.profile import profile_conv_handler
+    from handlers.auto import auto_conv_handler
+    from handlers.family import family_conv_handler
+    from handlers.achievements import achievements_handler
+    from handlers.schedule import schedule_conv_handler
+    from handlers.stats import stats_handler
+except ImportError as e:
+    logging.warning(f"Could not import some handlers: {e}")
 
+# Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__)
+async def menu(update: Update, context):
+    from keyboards.inline import main_menu_keyboard
+    text = "Главное меню:\nВыберите раздел:"
+    if update.message:
+        await update.message.reply_text(text, reply_markup=main_menu_keyboard())
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=main_menu_keyboard())
 
-@app.route('/')
-def home():
-    return "🚕 Taxi RTO Bot is running!"
-
-@app.route('/health')
-def health():
-    return {"status": "ok", "time": "Europe/Minsk"}
-
-auto_scheduler = AutoScheduler()
+async def error_handler(update: object, context) -> None:
+    logger.error(f"Update {update} caused error {context.error}")
+    # Можно добавить отправку уведомления админу
 
 def main():
-    # Создаём event loop явно (для Python 3.14)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
+    # 1. Инициализация БД
+    logger.info("Initializing database...")
+    db_manager.init_db()
+    
+    # 2. Event loop для Python 3.14+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
+    # 3. Планировщик
+    logger.info("Starting scheduler...")
+    auto_scheduler = AutoScheduler()
+    auto_scheduler.start()
 
-    application = Application.builder().token(BOT_TOKEN).build()
+    # 4. ТОКЕН БОТА
+    TOKEN = "8898518897:AAGsX4mTNcTf-pqm9X9GUyt7DJ_qNG-9Xb0"
+    
+    # 5. Создание приложения
+    application = Application.builder().token(TOKEN).build()
 
-    application.add_handler(CommandHandler("start", start))
+    # 6. Хендлеры
+    application.add_handler(CommandHandler("start", start_handler.callback))
+    application.add_handler(CommandHandler("menu", menu))
+    
+    # Кнопки
+    application.add_handler(reset_data_handler)
+    application.add_handler(restart_handler)
+    
+    # Конвейеры (если файлы существуют)
+    try:
+        application.add_handler(profile_conv_handler)
+        application.add_handler(auto_conv_handler)
+        application.add_handler(family_conv_handler)
+        application.add_handler(achievements_handler)
+        application.add_handler(schedule_conv_handler)
+        application.add_handler(stats_handler)
+    except NameError:
+        logger.warning("Some conversation handlers are missing, skipping...")
 
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^back_menu$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^shift_"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^break_"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^status$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^stats$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^earnings$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^achievements$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^weather$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^scheduler$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^family$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^cars$"))
-    application.add_handler(CallbackQueryHandler(button_handler, pattern="^settings$"))
+    # 7. Обработка ошибок
+    application.add_error_handler(error_handler)
 
-    family_conv = ConversationHandler(
-        entry_points=[CallbackQueryHandler(family_add_start, pattern="^family_add$")],
-        states={
-            ASK_MEMBER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, family_add_done)]
-        },
-        fallbacks=[CallbackQueryHandler(cmd_family, pattern="^family$")]
-    )
-    application.add_handler(family_conv)
-    application.add_handler(CallbackQueryHandler(family_remove, pattern="^family_remove$"))
-    application.add_handler(CallbackQueryHandler(family_del_confirm, pattern="^family_del_"))
-    application.add_handler(CallbackQueryHandler(cmd_family, pattern="^family$"))
-
-    application.add_handler(CallbackQueryHandler(cmd_cars, pattern="^cars$"))
-    application.add_handler(CallbackQueryHandler(car_add, pattern="^car_add$"))
-    application.add_handler(CallbackQueryHandler(car_default, pattern="^car_default$"))
-    application.add_handler(CallbackQueryHandler(car_set_default, pattern="^car_set_"))
-
-    application.add_handler(CallbackQueryHandler(cmd_settings, pattern="^settings$"))
-    application.add_handler(CallbackQueryHandler(cmd_scheduler, pattern="^scheduler$"))
-    application.add_handler(CallbackQueryHandler(scheduler_set, pattern="^scheduler_set$"))
-
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-    logger.info("Starting bot...")
-
-    # === POLLING (стабильнее на Render Free) ===
+    # 8. Запуск
+    logger.info("Bot is starting polling...")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-async def handle_text(update: Update, context):
-    if context.user_data.get("awaiting_car"):
-        await car_add_text(update, context)
-    elif context.user_data.get("awaiting_schedule"):
-        await scheduler_text(update, context)
-    else:
-        await update.message.reply_text(
-            "Используйте /start для открытия меню.\n"
-            "Или отправьте команду."
-        )
-
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
