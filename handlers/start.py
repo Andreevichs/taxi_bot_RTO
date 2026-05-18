@@ -2,9 +2,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Стартовое меню"""
     user = update.effective_user
-    
     keyboard = [
         [InlineKeyboardButton("🚗 Начать смену", callback_data="shift_start"),
          InlineKeyboardButton("⏹️ Закончить смену", callback_data="shift_end")],
@@ -20,9 +18,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🚙 Мои авто", callback_data="cars")],
         [InlineKeyboardButton("⚙️ Настройки", callback_data="settings")]
     ]
-    
     reply_markup = InlineKeyboardMarkup(keyboard)
-    
     await update.message.reply_text(
         f"👋 Привет, {user.first_name}!\n\n"
         f"🚕 Бот контроля РТО для таксистов Беларуси\n"
@@ -32,12 +28,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик кнопок меню"""
     query = update.callback_query
     await query.answer()
-    
     data = query.data
-    
+
     if data == "shift_start":
         from .rto import cmd_start_shift
         await cmd_start_shift(update, context)
@@ -81,9 +75,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await back_to_menu(update, context)
 
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Вернуться в меню"""
     query = update.callback_query
-    
     keyboard = [
         [InlineKeyboardButton("🚗 Начать смену", callback_data="shift_start"),
          InlineKeyboardButton("⏹️ Закончить смену", callback_data="shift_end")],
@@ -99,7 +91,6 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
          InlineKeyboardButton("🚙 Мои авто", callback_data="cars")],
         [InlineKeyboardButton("⚙️ Настройки", callback_data="settings")]
     ]
-    
     await query.edit_message_text(
         "🚕 Главное меню\n\nВыберите действие:",
         reply_markup=InlineKeyboardMarkup(keyboard)
