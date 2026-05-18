@@ -3,9 +3,9 @@ from config import ACHIEVEMENTS
 
 class AchievementManager:
     def __init__(self):
-        self.user_achievements: Dict[int, Set[str]] = {}  # user_id -> set of achievement_ids
-        self.user_stats: Dict[int, Dict] = {}  # user_id -> stats
-    
+        self.user_achievements: Dict[int, Set[str]] = {}
+        self.user_stats: Dict[int, Dict] = {}
+
     def init_user(self, user_id: int):
         if user_id not in self.user_achievements:
             self.user_achievements[user_id] = set()
@@ -18,49 +18,38 @@ class AchievementManager:
                 "safe_hours": 0,
                 "last_work_date": None
             }
-    
+
     def check_achievements(self, user_id: int, event_type: str, data: dict = None) -> List[Dict]:
-        """Проверить и выдать достижения"""
         self.init_user(user_id)
         new_achievements = []
         stats = self.user_stats[user_id]
-        
+
         if event_type == "shift_end":
             stats["total_shifts"] += 1
-            
-            # Первый выезд
             if stats["total_shifts"] == 1 and "first_shift" not in self.user_achievements[user_id]:
                 new_achievements.append(self._grant(user_id, "first_shift"))
-            
-            # Недельный труженик
             if stats["consecutive_days"] >= 7 and "week_worker" not in self.user_achievements[user_id]:
                 new_achievements.append(self._grant(user_id, "week_worker"))
-            
-            # Месячный герой
             if stats["total_shifts"] >= 30 and "month_hero" not in self.user_achievements[user_id]:
                 new_achievements.append(self._grant(user_id, "month_hero"))
-            
-            # Безопасник
             safe_hours = data.get("safe_hours", 0) if data else 0
             stats["safe_hours"] += safe_hours
             if stats["safe_hours"] >= 100 and "safe_driver" not in self.user_achievements[user_id]:
                 new_achievements.append(self._grant(user_id, "safe_driver"))
-            
-            # Заработок
             earnings = data.get("earnings", 0) if data else 0
             stats["total_earnings"] += earnings
             if stats["total_earnings"] >= 1000 and "money_maker" not in self.user_achievements[user_id]:
                 new_achievements.append(self._grant(user_id, "money_maker"))
-        
+
         elif event_type == "shift_start":
             hour = data.get("hour", 12) if data else 12
             if hour < 6 and "early_bird" not in self.user_achievements[user_id]:
                 new_achievements.append(self._grant(user_id, "early_bird"))
             if hour >= 22 and "night_owl" not in self.user_achievements[user_id]:
                 new_achievements.append(self._grant(user_id, "night_owl"))
-        
+
         return new_achievements
-    
+
     def _grant(self, user_id: int, achievement_id: str) -> Dict:
         self.user_achievements[user_id].add(achievement_id)
         ach = ACHIEVEMENTS[achievement_id]
@@ -69,7 +58,7 @@ class AchievementManager:
             "name": ach["name"],
             "desc": ach["desc"]
         }
-    
+
     def get_user_achievements(self, user_id: int) -> List[Dict]:
         self.init_user(user_id)
         result = []
@@ -77,7 +66,7 @@ class AchievementManager:
             ach = ACHIEVEMENTS[ach_id]
             result.append({"id": ach_id, **ach})
         return result
-    
+
     def get_progress(self, user_id: int) -> Dict:
         self.init_user(user_id)
         total = len(ACHIEVEMENTS)
