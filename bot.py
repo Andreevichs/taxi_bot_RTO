@@ -4,7 +4,6 @@ from telegram.ext import Application, CommandHandler, MessageHandler, filters, C
 from telegram import Update
 from utils.scheduler import AutoScheduler
 from utils.database import db_manager
-from handlers.start import start_handler, reset_data_handler, restart_handler
 
 # Настройка логирования
 logging.basicConfig(
@@ -29,7 +28,6 @@ async def menu(update: Update, context):
 async def error_handler(update: object, context) -> None:
     logger.error(f"Update {update} caused error {context.error}")
 
-# === ОБРАБОТЧИК ТЕКСТОВЫХ СООБЩЕНИЙ ===
 async def handle_text(update: Update, context):
     await update.message.reply_text("Используйте /start или /menu для навигации.")
 
@@ -38,7 +36,7 @@ def main():
     logger.info("Initializing database...")
     db_manager.init_db()
     
-    # 2. Планировщик (глобальный, чтобы не удалялся сборщиком мусора)
+    # 2. Планировщик
     logger.info("Starting scheduler...")
     auto_scheduler = AutoScheduler()
     auto_scheduler.start()
@@ -46,13 +44,17 @@ def main():
     # 3. Создание приложения
     application = Application.builder().token(TOKEN).build()
 
-    # 4. Хендлеры
-    application.add_handler(CommandHandler("start", start_handler.callback))
-    application.add_handler(CommandHandler("menu", menu))
+    # 4. Импорт и регистрация хендлеров
+    from handlers.start import (
+        start_handler, reset_data_handler, 
+        restart_handler, back_handler
+    )
     
-    # Кнопки
+    application.add_handler(start_handler)
+    application.add_handler(CommandHandler("menu", menu))
     application.add_handler(reset_data_handler)
     application.add_handler(restart_handler)
+    application.add_handler(back_handler)  # Назад в меню
     
     # Текстовые сообщения
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
