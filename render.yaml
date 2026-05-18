@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: taxibot-rto
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    envVars:
+      - key: TOKEN
+        sync: false  # Установи вручную в Dashboard Render
+    plan: free
