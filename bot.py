@@ -1,5 +1,6 @@
 import os
 import logging
+import asyncio
 from flask import Flask
 from telegram import Update
 from telegram.ext import (
@@ -42,10 +43,11 @@ def health():
 auto_scheduler = AutoScheduler()
 
 def main():
-    application = Application.builder().token(BOT_TOKEN).build()
+    # Создаём event loop явно (для Python 3.14)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
 
-    # Запускаем планировщик ПОСЛЕ создания event loop
-    # (внутри run_polling или run_webhook)
+    application = Application.builder().token(BOT_TOKEN).build()
 
     application.add_handler(CommandHandler("start", start))
 
@@ -90,12 +92,25 @@ def main():
     if os.environ.get("RENDER"):
         PORT = int(os.environ.get("PORT", 10000))
         WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_url=WEBHOOK_URL,
-            secret_token=os.environ.get("SECRET_TOKEN", "")
+        
+        # Запускаем webhook через asyncio loop
+        loop.run_until_complete(
+            application.initialize()
         )
+        loop.run_until_complete(
+            application.start()
+        )
+        loop.run_until_complete(
+            application.updater.start_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                webhook_url=WEBHOOK_URL,
+                secret_token=os.environ.get("SECRET_TOKEN", "")
+            )
+        )
+        
+        # Держим loop запущенным
+        loop.run_forever()
     else:
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
@@ -112,3 +127,4 @@ async def handle_text(update: Update, context):
 
 if __name__ == "__main__":
     main()
+    
