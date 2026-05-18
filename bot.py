@@ -17,35 +17,31 @@ from telegram.ext import (
     JobQueue,
 )
 
-# ==================== НАСТРОЙКИ ====================
-# ЗАМЕНИ ЭТОТ ТОКЕН НА СВОЙ (получить у @BotFather)
-# Получаем токен из переменной окружения и чистим от кавычек
-raw_token = os.environ.get("TOKEN", "")
-TOKEN = raw_token.strip().strip('"').strip("'")
-
-# Логируем для отладки (скрываем часть токена)
-if TOKEN:
-    masked = TOKEN[:10] + "..." + TOKEN[-5:] if len(TOKEN) > 15 else "***"
-    logger.info(f"🔑 TOKEN загружен: {masked}")
-else:
-    logger.error("❌ TOKEN не задан! Установи переменную окружения TOKEN в Render Dashboard")
-    raise ValueError("TOKEN не задан")
-
-# Пути к файлам
-DB_PATH = os.path.join(os.path.dirname(__file__), "shifts.db")
-
-# ==================== ЛОГИРОВАНИЕ ====================
+# ==================== ЛОГИРОВАНИЕ (СРАЗУ!) ====================
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
 logger = logging.getLogger(__name__)
 
+# ==================== НАСТРОЙКИ ====================
+# Получаем токен из переменной окружения (без кавычек!)
+raw_token = os.environ.get("TOKEN", "")
+TOKEN = raw_token.strip().strip('"').strip("'")
+
+if not TOKEN:
+    logger.error("❌ TOKEN не задан! Установи переменную окружения TOKEN в Render Dashboard")
+    raise ValueError("TOKEN не задан")
+
+logger.info(f"🔑 TOKEN загружен, длина: {len(TOKEN)}")
+
+# Пути к файлам
+DB_PATH = os.path.join(os.path.dirname(__file__), "shifts.db")
+
 # ==================== СОСТОЯНИЯ ДЛЯ ConversationHandler ====================
-# Используем числа для состояний
-SELECT_BREAK = 1          # Выбор длины перерыва
-SELECT_TEMPLATE = 2       # Выбор шаблона смены
-SETTINGS_MENU = 3         # Меню настроек
+SELECT_BREAK = 1
+SELECT_TEMPLATE = 2
+SETTINGS_MENU = 3
 
 # ==================== БАЗА ДАННЫХ ====================
 def init_db():
@@ -162,7 +158,6 @@ def check_week_limits(user_id):
     if week_start:
         ws = str_to_dt(week_start)
         if datetime.now() - ws > timedelta(days=7):
-            # Начинаем новую неделю
             reset_week(user_id)
             return {"week_hours": 0, "two_week_hours": two_week_hours, "new_week": True}
 
@@ -1042,7 +1037,7 @@ async def handle_stats(query, context, user_id):
     if limits:
         text += f"\n📊 *Текущая неделя:*\n"
         text += f"• Наработано: {limits['week_hours']:.1f}ч / 56ч\n"
-        text += f"• 2 недели: {limits['two_week_hours']:.1f}ч / 90ch\n"
+        text += f"• 2 недели: {limits['two_week_hours']:.1f}ч / 90ч\n"
 
     await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_menu_keyboard())
 
