@@ -1,5 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationTypes
+from telegram.ext import ContextTypes, ConversationHandler
 from config import MAX_FAMILY_MEMBERS
 
 # Хранилище семей (в продакшене — БД)
