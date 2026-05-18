@@ -1,5 +1,6 @@
 import os
 import logging
+from config import BOT_TOKEN
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     filters, CallbackQueryHandler, ConversationHandler
