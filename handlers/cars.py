@@ -208,5 +208,6 @@ car_add_conv = ConversationHandler(
         WAITING_CAR_PLATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, car_plate_received)],
         WAITING_CAR_COLOR: [MessageHandler(filters.TEXT & ~filters.COMMAND, car_color_received)],
     },
-    fallbacks=[CallbackQueryHandler(car_add_cancel, pattern='^cars$')]
+    fallbacks=[CallbackQueryHandler(car_add_cancel, pattern='^cars$')],
+    per_message=True  # <-- ИСПРАВЛЕНИЕ: убирает PTBUserWarning
 )
