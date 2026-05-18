@@ -1,7 +1,10 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler, CallbackQueryHandler, MessageHandler, filters
 from config import MAX_FAMILY_MEMBERS
-from utils.database import db_manager
+
+# Хранилище в памяти (в продакшене заменить на БД)
+family_groups: dict[int, list[int]] = {}
+family_names: dict[int, str] = {}
 
 ASK_MEMBER_ID = 1
 
@@ -10,22 +13,16 @@ async def cmd_family(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    
-    # Получаем членов семьи из БД
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM family_members WHERE user_id = ? AND status = "accepted"', (user_id,))
-    members = cursor.fetchall()
-    conn.close()
+    members = family_groups.get(user_id, [])
     
     text = "👨‍👩‍👧 Семейный доступ\n\n"
-    
-    if not members:
-        text += "Пока никого не добавлено.\n"
-    else:
+    if members:
         text += "Добавленные члены семьи:\n"
-        for member in members:
-            text += f"• {member['member_name']} (ID: {member['member_user_id']})\n"
+        for mid in members:
+            name = family_names.get(mid, f"ID: {mid}")
+            text += f"• {name}\n"
+    else:
+        text += "Пока никого не добавлено.\n"
     
     text += f"\nМакс: {MAX_FAMILY_MEMBERS} человек"
     
@@ -49,7 +46,7 @@ async def family_add_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ASK_MEMBER_ID
 
 async def family_add_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Получили ID, сохраняем в БД"""
+    """Получили ID, сохраняем"""
     user_id = update.effective_user.id
     text = update.message.text.strip()
     
@@ -59,37 +56,21 @@ async def family_add_done(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Неверный ID. Отправьте число.")
         return ASK_MEMBER_ID
     
-    # Проверяем лимит
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT COUNT(*) as count FROM family_members WHERE user_id = ?', (user_id,))
-    count = cursor.fetchone()['count']
+    if user_id not in family_groups:
+        family_groups[user_id] = []
     
-    if count >= MAX_FAMILY_MEMBERS:
-        conn.close()
+    if len(family_groups[user_id]) >= MAX_FAMILY_MEMBERS:
         await update.message.reply_text(f"❌ Лимит {MAX_FAMILY_MEMBERS} человек!")
         return ConversationHandler.END
     
-    # Проверяем, не добавлен ли уже
-    cursor.execute('SELECT 1 FROM family_members WHERE user_id = ? AND member_user_id = ?', 
-                   (user_id, member_id))
-    if cursor.fetchone():
-        conn.close()
+    if member_id in family_groups[user_id]:
         await update.message.reply_text("❌ Уже добавлен!")
         return ConversationHandler.END
     
-    # Добавляем в БД
-    cursor.execute('''
-        INSERT INTO family_members (user_id, member_user_id, member_name, status)
-        VALUES (?, ?, ?, 'pending')
-    ''', (user_id, member_id, f"Пользователь {member_id}"))
-    conn.commit()
-    conn.close()
+    family_groups[user_id].append(member_id)
+    family_names[member_id] = f"Пользователь {member_id}"
     
-    await update.message.reply_text(
-        f"✅ Пользователь {member_id} добавлен!\n\n"
-        f"📩 Ему отправлено приглашение. После подтверждения он появится в списке."
-    )
+    await update.message.reply_text(f"✅ Пользователь {member_id} добавлен!")
     return ConversationHandler.END
 
 async def family_add_cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -104,12 +85,7 @@ async def family_remove_start(update: Update, context: ContextTypes.DEFAULT_TYPE
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM family_members WHERE user_id = ? AND status = "accepted"', (user_id,))
-    members = cursor.fetchall()
-    conn.close()
+    members = family_groups.get(user_id, [])
     
     if not members:
         await query.edit_message_text(
@@ -119,9 +95,9 @@ async def family_remove_start(update: Update, context: ContextTypes.DEFAULT_TYPE
         return
     
     keyboard = []
-    for member in members:
-        name = member['member_name']
-        keyboard.append([InlineKeyboardButton(f"🗑 {name}", callback_data=f"family_del_{member['id']}")])
+    for mid in members:
+        name = family_names.get(mid, f"ID: {mid}")
+        keyboard.append([InlineKeyboardButton(f"🗑 {name}", callback_data=f"family_del_{mid}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="family")])
     
     await query.edit_message_text("Кого удалить?", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -131,20 +107,19 @@ async def family_del_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
+    data = query.data
+    member_id = int(data.replace("family_del_", ""))
     
-    # Получаем ID записи (не member_user_id!)
-    record_id = int(query.data.replace("family_del_", ""))
-    
-    conn = db_manager.get_connection()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM family_members WHERE id = ? AND user_id = ?', (record_id, user_id))
-    conn.commit()
-    conn.close()
-    
-    await query.edit_message_text(
-        "✅ Удалено!",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="family")]])
-    )
+    if user_id in family_groups and member_id in family_groups[user_id]:
+        family_groups[user_id].remove(member_id)
+        family_names.pop(member_id, None)
+        await query.edit_message_text("✅ Удалено!", reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="family")]
+        ]))
+    else:
+        await query.edit_message_text("❌ Ошибка", reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="family")]
+        ]))
 
 # === ConversationHandler для добавления члена семьи ===
 family_add_conv = ConversationHandler(
