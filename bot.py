@@ -18,7 +18,10 @@ from telegram.ext import (
 
 # ==================== НАСТРОЙКИ ====================
 # ЗАМЕНИ ЭТОТ ТОКЕН НА СВОЙ (получить у @BotFather)
-TOKEN = "8898518897:AAGsX4mTNcTf-pqm9X9GUyt7DJ_qNG-9Xb0"
+TOKEN = os.environ.get("TOKEN", "ВСТАВЬ_СВОЙ_ТОКЕН_ЗДЕСЬ")
+if TOKEN == "8898518897:AAGsX4mTNcTf-pqm9X9GUyt7DJ_qNG-9Xb0":
+    logger.error("❌ Не задан TOKEN! Установи переменную окружения TOKEN")
+    raise ValueError("TOKEN не задан")
 
 # Пути к файлам
 DB_PATH = os.path.join(os.path.dirname(__file__), "shifts.db")
@@ -1192,7 +1195,11 @@ def main():
     init_db()
 
     # Создаём приложение
-    application = Application.builder().token(TOKEN).build()
+    try:
+        application = Application.builder().token(TOKEN).build()
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания приложения: {e}")
+        raise
 
     # Обработчики команд
     application.add_handler(CommandHandler("start", start))
@@ -1205,8 +1212,8 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     # Запускаем бота
-    logger.info("Бот запущен!")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info("✅ Бот запущен! Ожидаю сообщения...")
+    application.run_polling(allowed_updates=Update.ALL_TYPES, drop_pending_updates=True)
 
 
 if __name__ == "__main__":
