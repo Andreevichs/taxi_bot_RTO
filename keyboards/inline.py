@@ -8,11 +8,46 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("📅 Расписание", callback_data="schedule_menu"),
          InlineKeyboardButton("🏆 Достижения", callback_data="achievements_menu")],
         [InlineKeyboardButton("👨‍👩‍👧‍👦 Семья", callback_data="family_menu")],
-        [InlineKeyboardButton("🗑 Очистить данные", callback_data="reset_data")],
+        [InlineKeyboardButton("🗑 Очистить данные (Тест)", callback_data="reset_data")],
     ]
     return InlineKeyboardMarkup(keyboard)
 
-def profile_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
-def auto_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("➕ Добавить авто", callback_data="add_car")], [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
-def family_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("➕ Добавить участника", callback_data="add_family_member")], [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
-def schedule_keyboard(): return InlineKeyboardMarkup([[InlineKeyboardButton("➕ Добавить день", callback_data="add_schedule_day")], [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")]])
+def profile_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def auto_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("➕ Добавить авто", callback_data="add_car")],
+        [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def family_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("➕ Добавить участника", callback_data="add_family_member")],
+        [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def schedule_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("➕ Добавить день", callback_data="add_schedule_day")],
+        [InlineKeyboardButton("🔙 Назад в меню", callback_data="back_to_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def yes_no_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("✅ Да", callback_data="yes"),
+         InlineKeyboardButton("❌ Нет", callback_data="no")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+def back_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("🔙 Назад", callback_data="back_to_main")],
+    ]
+    return InlineKeyboardMarkup(keyboard)
