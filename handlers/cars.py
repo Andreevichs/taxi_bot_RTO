@@ -1,5 +1,5 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes, ConversationHandler
+from telegram.ext import ContextTypes, ConversationHandler, MessageHandler, filters
 from utils.database import db_manager
 
 # Состояния для ConversationHandler
@@ -13,19 +13,19 @@ async def cmd_cars(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = update.effective_user.id
-    
+
     cars = db_manager.get_all_cars(user_id)
     active_car = db_manager.get_active_car(user_id)
-    
+
     text = "🚙 Мои автомобили\n\n"
-    
+
     if not cars:
         text += "У вас пока нет добавленных автомобилей.\n"
     else:
         for car in cars:
             marker = " ✅ (по умолчанию)" if active_car and car['id'] == active_car['id'] else ""
             text += f"• {car['brand']} {car['model']} ({car['license_plate']}){marker}\n"
-    
+
     keyboard = [
         [InlineKeyboardButton("➕ Добавить авто", callback_data="car_add")],
         [InlineKeyboardButton("⭐ Сделать активным", callback_data="car_set_active")],
@@ -78,7 +78,7 @@ async def car_color_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
     """Получили цвет, сохраняем в БД"""
     user_id = update.effective_user.id
     color = update.message.text.strip()
-    
+
     db_manager.add_car(
         user_id=user_id,
         brand=context.user_data['car_brand'],
@@ -86,11 +86,11 @@ async def car_color_received(update: Update, context: ContextTypes.DEFAULT_TYPE)
         plate=context.user_data['car_plate'],
         color=color
     )
-    
+
     # Очищаем временные данные
     for key in ['car_brand', 'car_model', 'car_plate']:
         context.user_data.pop(key, None)
-    
+
     await update.message.reply_text(
         "✅ Автомобиль успешно добавлен!",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ К списку авто", callback_data="cars")]])
@@ -115,20 +115,20 @@ async def car_set_active_start(update: Update, context: ContextTypes.DEFAULT_TYP
     await query.answer()
     user_id = update.effective_user.id
     cars = db_manager.get_all_cars(user_id)
-    
+
     if not cars:
         await query.edit_message_text(
             "❌ У вас нет автомобилей.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="cars")]])
         )
         return
-    
+
     keyboard = []
     for car in cars:
         text = f"{car['brand']} {car['model']}"
         keyboard.append([InlineKeyboardButton(text, callback_data=f"activate_car_{car['id']}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="cars")])
-    
+
     await query.edit_message_text(
         "Выберите активный автомобиль:",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -140,7 +140,7 @@ async def car_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = update.effective_user.id
     car_id = int(query.data.replace("activate_car_", ""))
-    
+
     # Деактивируем все, активируем выбранное
     conn = db_manager.get_connection()
     cursor = conn.cursor()
@@ -148,7 +148,7 @@ async def car_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cursor.execute('UPDATE cars SET is_active = 1 WHERE id = ? AND user_id = ?', (car_id, user_id))
     conn.commit()
     conn.close()
-    
+
     await query.edit_message_text(
         "✅ Автомобиль выбран по умолчанию!",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ К списку авто", callback_data="cars")]])
@@ -162,20 +162,20 @@ async def car_delete_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
     user_id = update.effective_user.id
     cars = db_manager.get_all_cars(user_id)
-    
+
     if not cars:
         await query.edit_message_text(
             "❌ У вас нет автомобилей для удаления.",
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Назад", callback_data="cars")]])
         )
         return
-    
+
     keyboard = []
     for car in cars:
         text = f"🗑 {car['brand']} {car['model']}"
         keyboard.append([InlineKeyboardButton(text, callback_data=f"delete_car_{car['id']}")])
     keyboard.append([InlineKeyboardButton("◀️ Назад", callback_data="cars")])
-    
+
     await query.edit_message_text(
         "Какой автомобиль удалить?",
         reply_markup=InlineKeyboardMarkup(keyboard)
@@ -187,13 +187,13 @@ async def car_delete_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     user_id = update.effective_user.id
     car_id = int(query.data.replace("delete_car_", ""))
-    
+
     conn = db_manager.get_connection()
     cursor = conn.cursor()
     cursor.execute('DELETE FROM cars WHERE id = ? AND user_id = ?', (car_id, user_id))
     conn.commit()
     conn.close()
-    
+
     await query.edit_message_text(
         "🗑 Автомобиль удалён!",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("◀️ К списку авто", callback_data="cars")]])
