@@ -89,30 +89,8 @@ def main():
 
     logger.info("Starting bot...")
 
-    if os.environ.get("RENDER"):
-        PORT = int(os.environ.get("PORT", 10000))
-        WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
-        
-        # Запускаем webhook через asyncio loop
-        loop.run_until_complete(
-            application.initialize()
-        )
-        loop.run_until_complete(
-            application.start()
-        )
-        loop.run_until_complete(
-            application.updater.start_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                webhook_url=WEBHOOK_URL,
-                secret_token=os.environ.get("SECRET_TOKEN", "")
-            )
-        )
-        
-        # Держим loop запущенным
-        loop.run_forever()
-    else:
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    # === POLLING (стабильнее на Render Free) ===
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 async def handle_text(update: Update, context):
     if context.user_data.get("awaiting_car"):
@@ -127,4 +105,3 @@ async def handle_text(update: Update, context):
 
 if __name__ == "__main__":
     main()
-    
