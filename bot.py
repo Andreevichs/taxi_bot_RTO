@@ -37,7 +37,20 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не задан!")
 
-# ... все функции menu, error_handler, handle_text как раньше ...
+# === ФУНКЦИИ ===
+async def menu(update: Update, context):
+    from keyboards.inline import main_menu_keyboard
+    text = "Главное меню:\nВыберите раздел:"
+    if update.message:
+        await update.message.reply_text(text, reply_markup=main_menu_keyboard())
+    elif update.callback_query:
+        await update.callback_query.edit_message_text(text, reply_markup=main_menu_keyboard())
+
+async def error_handler(update: object, context) -> None:
+    logger.error(f"Update {update} caused error {context.error}")
+
+async def handle_text(update: Update, context):
+    await update.message.reply_text("Используйте /start или /menu для навигации.")
 
 def main():
     # Запускаем Flask в отдельном потоке
@@ -65,7 +78,7 @@ def main():
     # Создаём приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # === ВСЕ ХЕНДЛЕРЫ КАК РАНЬШЕ ===
+    # === ИМПОРТ ХЕНДЛЕРОВ ===
     from handlers.start import (
         start_handler, reset_data_handler,
         restart_handler, back_handler
@@ -88,6 +101,7 @@ def main():
         cmd_settings, cmd_scheduler, scheduler_set
     )
 
+    # === ХЕНДЛЕРЫ ===
     application.add_handler(start_handler)
     application.add_handler(CommandHandler("menu", menu))
     application.add_handler(reset_data_handler)
