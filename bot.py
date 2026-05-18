@@ -23,14 +23,12 @@ from handlers.settings import (
 )
 from utils.scheduler import AutoScheduler
 
-# Настройка логов
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Flask для UptimeRobot
 app = Flask(__name__)
 
 @app.route('/')
@@ -41,20 +39,16 @@ def home():
 def health():
     return {"status": "ok", "time": "Europe/Minsk"}
 
-# Инициализация планировщика
 auto_scheduler = AutoScheduler()
 
 def main():
-    # Создаём приложение
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Запускаем планировщик
-    auto_scheduler.start()
-    
-    # === КОМАНДЫ ===
+
+    # Запускаем планировщик ПОСЛЕ создания event loop
+    # (внутри run_polling или run_webhook)
+
     application.add_handler(CommandHandler("start", start))
-    
-    # === КНОПКИ МЕНЮ ===
+
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^back_menu$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^shift_"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^break_"))
@@ -67,8 +61,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^family$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^cars$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^settings$"))
-    
-    # === СЕМЕЙНЫЙ ДОСТУП ===
+
     family_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(family_add_start, pattern="^family_add$")],
         states={
@@ -80,30 +73,23 @@ def main():
     application.add_handler(CallbackQueryHandler(family_remove, pattern="^family_remove$"))
     application.add_handler(CallbackQueryHandler(family_del_confirm, pattern="^family_del_"))
     application.add_handler(CallbackQueryHandler(cmd_family, pattern="^family$"))
-    
-    # === АВТО ===
+
     application.add_handler(CallbackQueryHandler(cmd_cars, pattern="^cars$"))
     application.add_handler(CallbackQueryHandler(car_add, pattern="^car_add$"))
     application.add_handler(CallbackQueryHandler(car_default, pattern="^car_default$"))
     application.add_handler(CallbackQueryHandler(car_set_default, pattern="^car_set_"))
-    
-    # === НАСТРОЙКИ / ПЛАНИРОВЩИК ===
+
     application.add_handler(CallbackQueryHandler(cmd_settings, pattern="^settings$"))
     application.add_handler(CallbackQueryHandler(cmd_scheduler, pattern="^scheduler$"))
     application.add_handler(CallbackQueryHandler(scheduler_set, pattern="^scheduler_set$"))
-    
-    # === ТЕКСТОВЫЕ СООБЩЕНИЯ (для ввода данных) ===
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
-    # Запуск
+
     logger.info("Starting bot...")
-    
-    # Для Render: webhook или polling
+
     if os.environ.get("RENDER"):
-        # Webhook mode
         PORT = int(os.environ.get("PORT", 10000))
         WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
-        
         application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
@@ -111,11 +97,9 @@ def main():
             secret_token=os.environ.get("SECRET_TOKEN", "")
         )
     else:
-        # Polling mode (локально)
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 async def handle_text(update: Update, context):
-    """Обработка текстовых сообщений"""
     if context.user_data.get("awaiting_car"):
         await car_add_text(update, context)
     elif context.user_data.get("awaiting_schedule"):
