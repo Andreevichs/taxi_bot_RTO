@@ -19,9 +19,16 @@ from telegram.ext import (
 
 # ==================== НАСТРОЙКИ ====================
 # ЗАМЕНИ ЭТОТ ТОКЕН НА СВОЙ (получить у @BotFather)
-TOKEN = os.environ.get("TOKEN", "ВСТАВЬ_СВОЙ_ТОКЕН_ЗДЕСЬ")
-if TOKEN == "8898518897:AAGsX4mTNcTf-pqm9X9GUyt7DJ_qNG-9Xb0":
-    logger.error("❌ Не задан TOKEN! Установи переменную окружения TOKEN")
+# Получаем токен из переменной окружения и чистим от кавычек
+raw_token = os.environ.get("TOKEN", "")
+TOKEN = raw_token.strip().strip('"').strip("'")
+
+# Логируем для отладки (скрываем часть токена)
+if TOKEN:
+    masked = TOKEN[:10] + "..." + TOKEN[-5:] if len(TOKEN) > 15 else "***"
+    logger.info(f"🔑 TOKEN загружен: {masked}")
+else:
+    logger.error("❌ TOKEN не задан! Установи переменную окружения TOKEN в Render Dashboard")
     raise ValueError("TOKEN не задан")
 
 # Пути к файлам
@@ -1199,6 +1206,11 @@ def main():
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+
+    # Логируем запуск
+    logger.info("🚀 Запуск бота...")
+    logger.info(f"📁 Рабочая директория: {os.getcwd()}")
+    logger.info(f"📁 База данных: {DB_PATH}")
 
     # Инициализируем базу
     init_db()
