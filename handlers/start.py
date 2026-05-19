@@ -55,12 +55,12 @@ async def reset_data_callback(update: Update, context: ContextTypes.DEFAULT_TYPE
         if user_id in context.user_data:
             context.user_data.clear()
         
+        # === ИСПРАВЛЕНИЕ: убрали parse_mode='MarkdownV2', чтобы не было ошибки с ! ===
         await query.edit_message_text(
-            "🗑 *Данные успешно очищены!*\n\n"
+            "🗑 Данные успешно очищены!\n\n"
             "Вся статистика, машина и настройки удалены безвозвратно.\n"
             "Теперь ты как новый пользователь.\n\n"
             "Нажми /start, чтобы начать заново.",
-            parse_mode='MarkdownV2',
             reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔄 Начать заново", callback_data="start_restart")]])
         )
     except Exception as e:
@@ -76,4 +76,4 @@ async def restart_after_reset(update: Update, context: ContextTypes.DEFAULT_TYPE
 start_handler = CommandHandler('start', start_command)
 reset_data_handler = CallbackQueryHandler(reset_data_callback, pattern='^reset_data$')
 restart_handler = CallbackQueryHandler(restart_after_reset, pattern='^start_restart$')
-back_handler = CallbackQueryHandler(back_to_main_callback, pattern='^back_to_main$')  # НОВЫЙ
+back_handler = CallbackQueryHandler(back_to_main_callback, pattern='^back_to_main$')
