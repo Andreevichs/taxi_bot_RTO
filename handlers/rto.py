@@ -1,10 +1,10 @@
-# handlers/rto.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.rto_logic import get_session
 from utils.time_utils import now_minsk, format_duration, format_datetime
 from utils.achievements import AchievementManager
 from utils.earnings import calculate_earnings
+import database as db
 
 achievements = AchievementManager()
 
@@ -15,14 +15,11 @@ async def cmd_start_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     session = get_session(user_id)
 
-    # Получить авто по умолчанию из БД
-    import database as db
     car = db.get_default_car(user_id)
 
     result = session.start_shift(car)
 
     if result["ok"]:
-        # Проверка достижений
         hour = now_minsk().hour
         new_ach = achievements.check_achievements(user_id, "shift_start", {"hour": hour})
 
@@ -54,10 +51,8 @@ async def cmd_end_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result["ok"]:
         stats = result["stats"]
 
-        # Расчёт заработка
         earnings_data = calculate_earnings(user_id, stats["driving"])
 
-        # Проверка достижений
         new_ach = achievements.check_achievements(user_id, "shift_end", {
             "safe_hours": stats["driving"].total_seconds() / 3600,
             "earnings": earnings_data["total"]
@@ -127,7 +122,6 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekly = session.get_weekly_stats()
 
     if status["active"]:
-        # Уровень усталости эмодзи
         fatigue = status["fatigue"]
         if fatigue < 30:
             fatigue_emoji = "🟢"
