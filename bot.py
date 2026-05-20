@@ -1,6 +1,7 @@
 import os
 import logging
 import asyncio
+import threading
 from flask import Flask, request
 from telegram import Update
 from telegram.ext import (
@@ -36,10 +37,16 @@ def health():
     return {"status": "ok", "time": "Europe/Minsk"}
 
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
-async def webhook():
-    """Получаем обновления от Telegram"""
+def webhook():
+    """Получаем обновления от Telegram (синхронно)"""
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    
     update = Update.de_json(request.get_json(force=True), application.bot)
-    await application.process_update(update)
+    loop.run_until_complete(application.process_update(update))
     return 'OK'
 
 # === ФУНКЦИИ ===
@@ -117,12 +124,6 @@ def setup_handlers():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_error_handler(error_handler)
 
-async def set_webhook():
-    """Устанавливаем webhook при старте"""
-    webhook_url = f"https://taxi-bot-rto.onrender.com/webhook/{BOT_TOKEN}"
-    await application.bot.set_webhook(url=webhook_url)
-    logger.info(f"Webhook set to: {webhook_url}")
-
 def main():
     # Инициализация БД
     logger.info("Initializing database...")
@@ -143,9 +144,15 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-    # Устанавливаем webhook
+    # Инициализируем приложение
     loop.run_until_complete(application.initialize())
-    loop.run_until_complete(set_webhook())
+    
+    # Удаляем старый webhook и устанавливаем новый
+    loop.run_until_complete(application.bot.delete_webhook(drop_pending_updates=True))
+    
+    webhook_url = f"https://taxi-bot-rto.onrender.com/webhook/{BOT_TOKEN}"
+    loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
+    logger.info(f"Webhook set to: {webhook_url}")
 
     # Запускаем Flask
     port = int(os.environ.get("PORT", 10000))
