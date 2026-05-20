@@ -1,5 +1,7 @@
+# bot.py
 import os
 import logging
+import asyncio
 from flask import Flask
 from telegram import Update
 from telegram.ext import (
@@ -64,6 +66,13 @@ async def handle_text(update: Update, context):
 
 
 def main():
+    # Создаём event loop явно (Python 3.14 fix)
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
     application = Application.builder().token(BOT_TOKEN).build()
 
     auto_scheduler = AutoScheduler()
@@ -90,7 +99,8 @@ def main():
         states={
             ASK_MEMBER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, family_add_done)]
         },
-        fallbacks=[CallbackQueryHandler(cmd_family, pattern="^family$")]
+        fallbacks=[CallbackQueryHandler(cmd_family, pattern="^family$")],
+        per_message=False
     )
     application.add_handler(family_conv)
     application.add_handler(CallbackQueryHandler(family_remove, pattern="^family_remove$"))
