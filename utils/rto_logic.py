@@ -1,4 +1,3 @@
-# utils/rto_logic.py
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from .time_utils import now_minsk, format_duration, TIMEZONE, get_week_start
@@ -17,7 +16,6 @@ class RTOSession:
         """Начать смену"""
         now = now_minsk()
 
-        # Проверка: нет ли уже активной смены?
         active = db.get_active_shift(self.user_id)
         if active:
             return {
@@ -25,7 +23,6 @@ class RTOSession:
                 "error": "❌ У вас уже есть активная смена! Закончите текущую перед началом новой."
             }
 
-        # Проверка отдыха
         shifts = db.get_user_shifts(self.user_id)
         if shifts:
             last_shift = shifts[-1]
@@ -37,7 +34,6 @@ class RTOSession:
                         "error": f"⏰ Отдых слишком короткий!\nМинимум: {format_duration(MIN_DAILY_REST)}\nПрошло: {format_duration(rest)}"
                     }
 
-        # Проверка лимита 56 часов в неделю
         week_start = get_week_start()
         week_shifts = db.get_user_shifts(self.user_id, since=week_start)
         weekly_driving = timedelta()
@@ -52,7 +48,6 @@ class RTOSession:
                 "error": f"⚠️ Лимит 56 часов в неделю исчерпан!\nНакоплено: {format_duration(weekly_driving)}"
             }
 
-        # Создать активную смену
         db.save_active_shift(self.user_id, now, car)
         return {"ok": True, "start": now}
 
@@ -64,14 +59,12 @@ class RTOSession:
 
         now = now_minsk()
 
-        # Закрыть текущую сессию вождения
         sessions = active["driving_sessions"]
         if sessions:
             last = sessions[-1]
             if last.get("end") is None:
                 last["end"] = now.isoformat()
 
-        # Добавить перерыв
         breaks = active["breaks"]
         breaks.append({"start": now.isoformat(), "end": None})
 
@@ -86,14 +79,12 @@ class RTOSession:
 
         now = now_minsk()
 
-        # Закрыть перерыв
         breaks = active["breaks"]
         if breaks:
             last = breaks[-1]
             if last.get("end") is None:
                 last["end"] = now.isoformat()
 
-        # Новая сессия вождения
         sessions = active["driving_sessions"]
         sessions.append({"start": now.isoformat(), "end": None})
 
@@ -108,7 +99,6 @@ class RTOSession:
 
         now = now_minsk()
 
-        # Закрыть всё
         sessions = active["driving_sessions"]
         if sessions:
             last = sessions[-1]
@@ -120,11 +110,9 @@ class RTOSession:
             if b.get("end") is None:
                 b["end"] = now.isoformat()
 
-        # Обновить в БД и перенести в архив
         db.update_active_shift(self.user_id, breaks=breaks, driving_sessions=sessions)
         db.end_shift(self.user_id, now)
 
-        # Получить завершённую смену для статистики
         shifts = db.get_user_shifts(self.user_id)
         if shifts:
             last_shift = shifts[-1]
@@ -167,7 +155,6 @@ class RTOSession:
         now = now_minsk()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # Статистика за сегодня
         today_shifts = db.get_user_shifts(self.user_id, since=today_start)
         today_driving = timedelta()
         today_shifts_count = len(today_shifts)
@@ -177,10 +164,8 @@ class RTOSession:
                 stats = self._calc_shift_stats(shift)
                 today_driving += stats["driving"]
 
-        # Если активная смена
         active = db.get_active_shift(self.user_id)
         if active:
-            # Добавить текущую смену к статистике дня
             current_stats = self._calc_shift_stats({
                 "start_time": active["start_time"],
                 "end_time": now,
@@ -193,10 +178,8 @@ class RTOSession:
 
             shift_duration = now - active["start_time"]
 
-            # Проверки
             warnings = []
 
-            # Проверка непрерывного вождения
             for session in active["driving_sessions"]:
                 s_start = datetime.fromisoformat(session["start"]) if isinstance(session["start"], str) else session["start"]
                 s_end = now if session.get("end") is None else (
@@ -211,7 +194,6 @@ class RTOSession:
             if shift_duration > MAX_SHIFT:
                 warnings.append("⚠️ Смена дольше 13 часов!")
 
-            # Усталость
             fatigue = min(100, int((current_stats["driving"].total_seconds() / 3600) * 10))
 
             return {
@@ -224,7 +206,6 @@ class RTOSession:
                 "car": active["car"]
             }
 
-        # Нет активной смены
         return {
             "active": False,
             "driving_today": today_driving,
@@ -245,7 +226,6 @@ class RTOSession:
                 stats = self._calc_shift_stats(shift)
                 weekly_driving += stats["driving"]
 
-        # Добавить активную смену
         active = db.get_active_shift(self.user_id)
         if active:
             current_stats = self._calc_shift_stats({
