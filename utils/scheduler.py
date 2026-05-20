@@ -1,4 +1,3 @@
-# utils/scheduler.py
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Callable
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -11,7 +10,6 @@ class AutoScheduler:
     _instance = None
 
     def __new__(cls):
-        # Singleton — один планировщик на всё приложение
         if cls._instance is None:
             cls._instance = super().__new__(cls)
             cls._instance._initialized = False
@@ -22,7 +20,7 @@ class AutoScheduler:
             return
         self._initialized = True
         self.scheduler = AsyncIOScheduler(timezone=TIMEZONE)
-        self.reminders: Dict[int, list] = {}  # user_id -> list of jobs
+        self.reminders: Dict[int, list] = {}
 
     def start(self):
         if not self.scheduler.running:
@@ -69,7 +67,6 @@ class AutoScheduler:
                 "end": now.replace(hour=e_end_h, minute=e_end_m, second=0, microsecond=0)
             }
         else:
-            # Завтра утро
             tomorrow = now + timedelta(days=1)
             return {
                 "type": "утро (завтра)",
