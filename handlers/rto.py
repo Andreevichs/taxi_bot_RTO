@@ -1,3 +1,4 @@
+# handlers/rto.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.rto_logic import get_session
@@ -27,6 +28,12 @@ async def cmd_start_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🕐 {format_datetime(result['start'])}\n"
                 f"🚙 Авто: {car}\n\n"
                 f"Удачной работы! 🚕")
+
+        # Показать предупреждения (если есть)
+        if result.get("warnings"):
+            text += "\n\n⚠️ Внимание:\n"
+            for w in result["warnings"]:
+                text += f"• {w}\n"
 
         if new_ach:
             text += "\n\n🏆 Новое достижение!\n"
