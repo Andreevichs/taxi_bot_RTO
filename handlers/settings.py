@@ -1,4 +1,3 @@
-# handlers/settings.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.scheduler import AutoScheduler
@@ -96,9 +95,7 @@ async def scheduler_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Улучшенный парсер
     try:
-        # Убрать слова "утро", "вечер", "и", запятые
         cleaned = text.replace("утро", "").replace("вечер", "").replace("и", "").replace(",", " ")
         parts = [p for p in cleaned.split() if p and "-" in p]
 
@@ -111,7 +108,6 @@ async def scheduler_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if len(morning) != 2 or len(evening) != 2:
             raise ValueError("Неверный формат интервалов")
 
-        # Валидация времени
         parse_schedule_time(morning[0])
         parse_schedule_time(morning[1])
         parse_schedule_time(evening[0])
