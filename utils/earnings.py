@@ -1,4 +1,3 @@
-# utils/earnings.py
 from datetime import timedelta
 from config import DEFAULT_HOURLY_RATE
 import database as db
@@ -13,8 +12,6 @@ def calculate_earnings(user_id: int, driving_time: timedelta, hourly_rate: float
     hours = driving_time.total_seconds() / 3600
     base_earnings = hours * hourly_rate
 
-    # Ночные часы (22:00 - 06:00) — бонус +20%
-    # В реальном боте можно анализировать время смены
     night_bonus = 0
     rush_bonus = 0
 
