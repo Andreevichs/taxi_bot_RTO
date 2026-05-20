@@ -35,14 +35,7 @@ class AchievementManager:
 
         data["last_work_date"] = today.isoformat()
 
-    def check_achievements(self, Продолжаю отправку оставшихся файлов. Вот остальные утилиты:
-
----
-
-## `utils/achievements.py` (продолжение)
-
-```python
-        user_id: int, event_type: str, data: dict = None) -> List[Dict]:
+    def check_achievements(self, user_id: int, event_type: str, data: dict = None) -> List[Dict]:
         """Проверить и выдать достижения"""
         ach_data = self._get_data(user_id)
         new_achievements = []
