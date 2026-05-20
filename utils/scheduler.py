@@ -1,6 +1,7 @@
+# utils/scheduler.py
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Callable
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from .time_utils import now_minsk, TIMEZONE, parse_schedule_time
 import database as db
@@ -19,7 +20,7 @@ class AutoScheduler:
         if self._initialized:
             return
         self._initialized = True
-        self.scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+        self.scheduler = BackgroundScheduler(timezone=TIMEZONE)
         self.reminders: Dict[int, list] = {}
 
     def start(self):
