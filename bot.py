@@ -108,17 +108,20 @@ def main():
     application.add_handler(restart_handler)
     application.add_handler(back_handler)
 
+    # РТО кнопки
     application.add_handler(CallbackQueryHandler(cmd_start_shift, pattern='^shift_start$'))
     application.add_handler(CallbackQueryHandler(cmd_end_shift, pattern='^shift_end$'))
     application.add_handler(CallbackQueryHandler(cmd_break_start, pattern='^break_start$'))
     application.add_handler(CallbackQueryHandler(cmd_break_end, pattern='^break_end$'))
     application.add_handler(CallbackQueryHandler(cmd_status, pattern='^status$'))
 
+    # Статистика
     application.add_handler(CallbackQueryHandler(cmd_stats, pattern='^stats$'))
     application.add_handler(CallbackQueryHandler(cmd_earnings, pattern='^earnings$'))
     application.add_handler(CallbackQueryHandler(cmd_achievements, pattern='^achievements$'))
     application.add_handler(CallbackQueryHandler(cmd_weather, pattern='^weather$'))
 
+    # Автомобили
     application.add_handler(CallbackQueryHandler(cmd_cars, pattern='^cars$'))
     application.add_handler(car_add_conv)
     application.add_handler(CallbackQueryHandler(car_set_active_start, pattern='^car_set_active$'))
@@ -126,20 +129,22 @@ def main():
     application.add_handler(CallbackQueryHandler(car_delete_start, pattern='^car_delete$'))
     application.add_handler(CallbackQueryHandler(car_delete_confirm, pattern='^delete_car_'))
 
+    # Семья
     application.add_handler(CallbackQueryHandler(cmd_family, pattern='^family$'))
     application.add_handler(family_add_conv)
     application.add_handler(CallbackQueryHandler(family_remove_start, pattern='^family_remove$'))
     application.add_handler(CallbackQueryHandler(family_del_confirm, pattern='^family_del_'))
 
+    # Настройки
     application.add_handler(CallbackQueryHandler(cmd_settings, pattern='^settings$'))
     application.add_handler(CallbackQueryHandler(cmd_scheduler, pattern='^scheduler$'))
     application.add_handler(CallbackQueryHandler(scheduler_set, pattern='^scheduler_set$'))
 
+    # Текстовые сообщения
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_error_handler(error_handler)
 
     logger.info("Bot is starting polling...")
-    # === ИСПРАВЛЕНИЕ: drop_pending_updates + правильный allowed_updates ===
     application.run_polling(
         drop_pending_updates=True,
         allowed_updates=["message", "callback_query", "inline_query"]
