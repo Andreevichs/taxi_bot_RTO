@@ -2,6 +2,7 @@
 import os
 import logging
 import asyncio
+import threading
 from flask import Flask
 from telegram import Update
 from telegram.ext import (
@@ -65,7 +66,23 @@ async def handle_text(update: Update, context):
         )
 
 
+def run_flask():
+    """Запустить Flask в отдельном потоке"""
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"Запуск Flask на порту {port}...")
+    app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
+
+
 def main():
+    # Запустить Flask ПЕРЕД ботом, чтобы Render увидел порт
+    if os.environ.get("RENDER"):
+        flask_thread = threading.Thread(target=run_flask, daemon=True)
+        flask_thread.start()
+        # Дать Flask время стартовать
+        import time
+        time.sleep(2)
+        logger.info("Flask запущен")
+
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -121,28 +138,9 @@ def main():
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    logger.info("Starting bot...")
+    logger.info("Starting bot in polling mode...")
 
-    if os.environ.get("RENDER"):
-        PORT = int(os.environ.get("PORT", 10000))
-        WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
-
-        # Проверка: WEBHOOK_URL должен быть https://
-        if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
-            logger.error("❌ WEBHOOK_URL не задан или не начинается с https://")
-            logger.error("   Установите переменную окружения WEBHOOK_URL")
-            logger.error("   Пример: https://taxi-bot-rto.onrender.com")
-            logger.info("🔄 Переключаюсь на polling mode...")
-            application.run_polling(allowed_updates=Update.ALL_TYPES)
-        else:
-            application.run_webhook(
-                listen="0.0.0.0",
-                port=PORT,
-                webhook_url=WEBHOOK_URL,
-                secret_token=os.environ.get("SECRET_TOKEN", "")
-            )
-    else:
-        application.run_polling(allowed_updates=Update.ALL_TYPES)
+    application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":
