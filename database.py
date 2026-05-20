@@ -1,3 +1,4 @@
+# database.py
 import sqlite3
 import json
 import os
@@ -14,9 +15,11 @@ def get_db():
 
 
 def init_db():
+    """Создать все таблицы"""
     conn = get_db()
     c = conn.cursor()
 
+    # Смены
     c.execute('''
         CREATE TABLE IF NOT EXISTS shifts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -30,6 +33,7 @@ def init_db():
         )
     ''')
 
+    # Активные смены (текущие)
     c.execute('''
         CREATE TABLE IF NOT EXISTS active_shifts (
             user_id INTEGER PRIMARY KEY,
@@ -41,6 +45,7 @@ def init_db():
         )
     ''')
 
+    # Автомобили
     c.execute('''
         CREATE TABLE IF NOT EXISTS cars (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -51,6 +56,7 @@ def init_db():
         )
     ''')
 
+    # Семейный доступ
     c.execute('''
         CREATE TABLE IF NOT EXISTS family_members (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,6 +67,7 @@ def init_db():
         )
     ''')
 
+    # Достижения
     c.execute('''
         CREATE TABLE IF NOT EXISTS user_achievements (
             user_id INTEGER PRIMARY KEY,
@@ -75,6 +82,7 @@ def init_db():
         )
     ''')
 
+    # Расписание
     c.execute('''
         CREATE TABLE IF NOT EXISTS schedules (
             user_id INTEGER PRIMARY KEY,
@@ -85,6 +93,7 @@ def init_db():
         )
     ''')
 
+    # Настройки пользователя
     c.execute('''
         CREATE TABLE IF NOT EXISTS user_settings (
             user_id INTEGER PRIMARY KEY,
@@ -95,6 +104,8 @@ def init_db():
     conn.commit()
     conn.close()
 
+
+# === СМЕНЫ ===
 
 def save_shift(user_id: int, start_time: datetime, car: str = "Основное"):
     conn = get_db()
@@ -173,20 +184,31 @@ def delete_active_shift(user_id: int):
 
 
 def end_shift(user_id: int, end_time: datetime):
+    """Завершить смену: перенести из active_shifts в shifts"""
     conn = get_db()
     c = conn.cursor()
 
+    # Получить активную смену
     c.execute("SELECT * FROM active_shifts WHERE user_id = ?", (user_id,))
     row = c.fetchone()
 
     if row:
+        # Вставить завершённую смену в архив
         c.execute('''
-            UPDATE shifts SET end_time = ?, breaks = ?, driving_sessions = ?
-            WHERE user_id = ? AND end_time IS NULL
-            ORDER BY id DESC LIMIT 1
-        ''', (end_time.isoformat(), row["breaks"], row["driving_sessions"], user_id))
+            INSERT INTO shifts (user_id, start_time, end_time, car, breaks, driving_sessions)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            user_id,
+            row["start_time"],
+            end_time.isoformat(),
+            row["car"],
+            row["breaks"],
+            row["driving_sessions"]
+        ))
 
+        # Удалить активную смену
         c.execute("DELETE FROM active_shifts WHERE user_id = ?", (user_id,))
+
         conn.commit()
 
     conn.close()
@@ -222,6 +244,8 @@ def get_user_shifts(user_id: int, since: datetime = None) -> List[Dict]:
         })
     return result
 
+
+# === АВТО ===
 
 def add_car(user_id: int, car_name: str):
     conn = get_db()
@@ -274,6 +298,8 @@ def remove_car(user_id: int, car_name: str):
     conn.close()
 
 
+# === СЕМЬЯ ===
+
 def add_family_member(owner_id: int, member_id: int, member_name: str = "Пользователь"):
     conn = get_db()
     c = conn.cursor()
@@ -316,6 +342,8 @@ def get_family_count(owner_id: int) -> int:
     return row["cnt"]
 
 
+# === ДОСТИЖЕНИЯ ===
+
 def get_user_achievements_data(user_id: int) -> Dict:
     conn = get_db()
     c = conn.cursor()
@@ -335,6 +363,7 @@ def get_user_achievements_data(user_id: int) -> Dict:
             "last_work_date": row["last_work_date"]
         }
 
+    # Создать запись
     conn = get_db()
     c = conn.cursor()
     c.execute(
@@ -375,6 +404,8 @@ def update_achievements(user_id: int, data: Dict):
     conn.close()
 
 
+# === РАСПИСАНИЕ ===
+
 def save_schedule(user_id: int, morning_start: str, morning_end: str,
                   evening_start: str, evening_end: str):
     conn = get_db()
@@ -410,6 +441,8 @@ def delete_schedule(user_id: int):
     conn.close()
 
 
+# === НАСТРОЙКИ ===
+
 def get_user_settings(user_id: int) -> Dict:
     conn = get_db()
     c = conn.cursor()
@@ -419,6 +452,7 @@ def get_user_settings(user_id: int) -> Dict:
     if row:
         return {"hourly_rate": row["hourly_rate"]}
 
+    # Создать по умолчанию
     conn = get_db()
     c = conn.cursor()
     c.execute("INSERT INTO user_settings (user_id) VALUES (?)", (user_id,))
