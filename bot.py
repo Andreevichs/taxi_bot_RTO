@@ -76,7 +76,7 @@ def main():
 
     # === КОМАНДЫ ===
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", start))  # /help = /start
+    application.add_handler(CommandHandler("help", start))
 
     # === КНОПКИ МЕНЮ ===
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^back_menu$"))
@@ -120,15 +120,13 @@ def main():
     application.add_handler(CallbackQueryHandler(scheduler_del, pattern="^scheduler_del$"))
     application.add_handler(CallbackQueryHandler(set_rate_start, pattern="^set_rate$"))
 
-    # === ТЕКСТОВЫЕ СООБЩЕНИЯ (для ввода данных) ===
+    # === ТЕКСТОВЫЕ СООБЩЕНИЯ ===
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     # Запуск
     logger.info("Starting bot...")
 
-    # Для Render: webhook или polling
     if os.environ.get("RENDER"):
-        # Webhook mode
         PORT = int(os.environ.get("PORT", 10000))
         WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
 
@@ -139,7 +137,6 @@ def main():
             secret_token=os.environ.get("SECRET_TOKEN", "")
         )
     else:
-        # Polling mode (локально)
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
