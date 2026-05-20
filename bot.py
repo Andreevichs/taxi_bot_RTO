@@ -1,4 +1,3 @@
-# bot.py
 import os
 import logging
 from flask import Flask
@@ -8,7 +7,6 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
-# Инициализация БД
 import database as db
 db.init_db()
 
@@ -31,14 +29,12 @@ from handlers.settings import (
 )
 from utils.scheduler import AutoScheduler
 
-# Настройка логов
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Flask для UptimeRobot
 app = Flask(__name__)
 
 @app.route('/')
@@ -50,12 +46,13 @@ def health():
     return {"status": "ok", "time": "Europe/Minsk"}
 
 
-# === ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ===
 async def handle_text(update: Update, context):
     """Обработка текстовых сообщений"""
     if context.user_data.get("awaiting_car"):
+        from handlers.cars import car_add_text
         await car_add_text(update, context)
     elif context.user_data.get("awaiting_schedule"):
+        from handlers.settings import scheduler_text
         await scheduler_text(update, context)
     elif context.user_data.get("awaiting_rate"):
         await set_rate_done(update, context)
@@ -67,18 +64,14 @@ async def handle_text(update: Update, context):
 
 
 def main():
-    # Создаём приложение
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Инициализация планировщика (Singleton)
     auto_scheduler = AutoScheduler()
     auto_scheduler.start()
 
-    # === КОМАНДЫ ===
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", start))
 
-    # === КНОПКИ МЕНЮ ===
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^back_menu$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^shift_"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^break_"))
@@ -92,7 +85,6 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^cars$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^settings$"))
 
-    # === СЕМЕЙНЫЙ ДОСТУП ===
     family_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(family_add_start, pattern="^family_add$")],
         states={
@@ -105,7 +97,6 @@ def main():
     application.add_handler(CallbackQueryHandler(family_del_confirm, pattern="^family_del_"))
     application.add_handler(CallbackQueryHandler(cmd_family, pattern="^family$"))
 
-    # === АВТО ===
     application.add_handler(CallbackQueryHandler(cmd_cars, pattern="^cars$"))
     application.add_handler(CallbackQueryHandler(car_add, pattern="^car_add$"))
     application.add_handler(CallbackQueryHandler(car_default, pattern="^car_default$"))
@@ -113,17 +104,14 @@ def main():
     application.add_handler(CallbackQueryHandler(car_remove, pattern="^car_remove$"))
     application.add_handler(CallbackQueryHandler(car_del_confirm, pattern="^car_del_"))
 
-    # === НАСТРОЙКИ / ПЛАНИРОВЩИК ===
     application.add_handler(CallbackQueryHandler(cmd_settings, pattern="^settings$"))
     application.add_handler(CallbackQueryHandler(cmd_scheduler, pattern="^scheduler$"))
     application.add_handler(CallbackQueryHandler(scheduler_set, pattern="^scheduler_set$"))
     application.add_handler(CallbackQueryHandler(scheduler_del, pattern="^scheduler_del$"))
     application.add_handler(CallbackQueryHandler(set_rate_start, pattern="^set_rate$"))
 
-    # === ТЕКСТОВЫЕ СООБЩЕНИЯ ===
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    # Запуск
     logger.info("Starting bot...")
 
     if os.environ.get("RENDER"):
