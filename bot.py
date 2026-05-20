@@ -1,3 +1,4 @@
+# bot.py
 import os
 import logging
 from flask import Flask
@@ -7,8 +8,12 @@ from telegram.ext import (
     MessageHandler, ConversationHandler, filters
 )
 
+# Инициализация БД
+import database as db
+db.init_db()
+
 from config import BOT_TOKEN
-from handlers.start import start, button_handler
+from handlers.start import start, button_handler, back_to_menu
 from handlers.rto import cmd_start_shift, cmd_end_shift, cmd_break_start, cmd_break_end, cmd_status
 from handlers.stats import cmd_stats, cmd_earnings, cmd_achievements, cmd_weather
 from handlers.family import (
@@ -16,10 +21,13 @@ from handlers.family import (
     family_del_confirm, ASK_MEMBER_ID
 )
 from handlers.cars import (
-    cmd_cars, car_add, car_add_text, car_default, car_set_default
+    cmd_cars, car_add, car_add_text, car_default, car_set_default,
+    car_remove, car_del_confirm
 )
 from handlers.settings import (
-    cmd_settings, cmd_scheduler, scheduler_set, scheduler_text
+    cmd_settings, cmd_scheduler, scheduler_set, scheduler_text,
+    scheduler_del, set_rate_start, set_rate_done,
+    ASK_SCHEDULE, ASK_RATE
 )
 from utils.scheduler import AutoScheduler
 
@@ -41,19 +49,35 @@ def home():
 def health():
     return {"status": "ok", "time": "Europe/Minsk"}
 
-# Инициализация планировщика
-auto_scheduler = AutoScheduler()
+
+# === ОБРАБОТКА ТЕКСТОВЫХ СООБЩЕНИЙ ===
+async def handle_text(update: Update, context):
+    """Обработка текстовых сообщений"""
+    if context.user_data.get("awaiting_car"):
+        await car_add_text(update, context)
+    elif context.user_data.get("awaiting_schedule"):
+        await scheduler_text(update, context)
+    elif context.user_data.get("awaiting_rate"):
+        await set_rate_done(update, context)
+    else:
+        await update.message.reply_text(
+            "Используйте /start для открытия меню.\n"
+            "Или отправьте команду."
+        )
+
 
 def main():
     # Создаём приложение
     application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Запускаем планировщик
+
+    # Инициализация планировщика (Singleton)
+    auto_scheduler = AutoScheduler()
     auto_scheduler.start()
-    
+
     # === КОМАНДЫ ===
     application.add_handler(CommandHandler("start", start))
-    
+    application.add_handler(CommandHandler("help", start))  # /help = /start
+
     # === КНОПКИ МЕНЮ ===
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^back_menu$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^shift_"))
@@ -67,7 +91,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^family$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^cars$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^settings$"))
-    
+
     # === СЕМЕЙНЫЙ ДОСТУП ===
     family_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(family_add_start, pattern="^family_add$")],
@@ -80,30 +104,34 @@ def main():
     application.add_handler(CallbackQueryHandler(family_remove, pattern="^family_remove$"))
     application.add_handler(CallbackQueryHandler(family_del_confirm, pattern="^family_del_"))
     application.add_handler(CallbackQueryHandler(cmd_family, pattern="^family$"))
-    
+
     # === АВТО ===
     application.add_handler(CallbackQueryHandler(cmd_cars, pattern="^cars$"))
     application.add_handler(CallbackQueryHandler(car_add, pattern="^car_add$"))
     application.add_handler(CallbackQueryHandler(car_default, pattern="^car_default$"))
     application.add_handler(CallbackQueryHandler(car_set_default, pattern="^car_set_"))
-    
+    application.add_handler(CallbackQueryHandler(car_remove, pattern="^car_remove$"))
+    application.add_handler(CallbackQueryHandler(car_del_confirm, pattern="^car_del_"))
+
     # === НАСТРОЙКИ / ПЛАНИРОВЩИК ===
     application.add_handler(CallbackQueryHandler(cmd_settings, pattern="^settings$"))
     application.add_handler(CallbackQueryHandler(cmd_scheduler, pattern="^scheduler$"))
     application.add_handler(CallbackQueryHandler(scheduler_set, pattern="^scheduler_set$"))
-    
+    application.add_handler(CallbackQueryHandler(scheduler_del, pattern="^scheduler_del$"))
+    application.add_handler(CallbackQueryHandler(set_rate_start, pattern="^set_rate$"))
+
     # === ТЕКСТОВЫЕ СООБЩЕНИЯ (для ввода данных) ===
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
+
     # Запуск
     logger.info("Starting bot...")
-    
+
     # Для Render: webhook или polling
     if os.environ.get("RENDER"):
         # Webhook mode
         PORT = int(os.environ.get("PORT", 10000))
         WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
-        
+
         application.run_webhook(
             listen="0.0.0.0",
             port=PORT,
@@ -114,17 +142,6 @@ def main():
         # Polling mode (локально)
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
-async def handle_text(update: Update, context):
-    """Обработка текстовых сообщений"""
-    if context.user_data.get("awaiting_car"):
-        await car_add_text(update, context)
-    elif context.user_data.get("awaiting_schedule"):
-        await scheduler_text(update, context)
-    else:
-        await update.message.reply_text(
-            "Используйте /start для открытия меню.\n"
-            "Или отправьте команду."
-        )
 
 if __name__ == "__main__":
     main()
