@@ -1,14 +1,12 @@
 import os
 import logging
 import asyncio
-import threading
-import signal
-from flask import Flask
+from flask import Flask, request
+from telegram import Update
 from telegram.ext import (
     Application, CommandHandler, MessageHandler,
     filters, CallbackQueryHandler, ConversationHandler
 )
-from telegram import Update
 from utils.scheduler import AutoScheduler
 from utils.database import db_manager
 
@@ -18,8 +16,16 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === FLASK ДЛЯ RENDER ===
+# === FLASK ДЛЯ RENDER + WEBHOOK ===
 app = Flask(__name__)
+
+# === ТОКЕН ===
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не задан!")
+
+# Создаём приложение глобально
+application = Application.builder().token(BOT_TOKEN).build()
 
 @app.route('/')
 def home():
@@ -29,14 +35,12 @@ def home():
 def health():
     return {"status": "ok", "time": "Europe/Minsk"}
 
-def run_flask():
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
-
-# === ТОКЕН ===
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан!")
+@app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
+async def webhook():
+    """Получаем обновления от Telegram"""
+    update = Update.de_json(request.get_json(force=True), application.bot)
+    await application.process_update(update)
+    return 'OK'
 
 # === ФУНКЦИИ ===
 async def menu(update: Update, context):
@@ -53,33 +57,8 @@ async def error_handler(update: object, context) -> None:
 async def handle_text(update: Update, context):
     await update.message.reply_text("Используйте /start или /menu для навигации.")
 
-def main():
-    # Запускаем Flask в отдельном потоке
-    flask_thread = threading.Thread(target=run_flask)
-    flask_thread.daemon = True
-    flask_thread.start()
-    logger.info(f"Flask started on port {os.environ.get('PORT', 10000)}")
-
-    # Инициализация БД
-    logger.info("Initializing database...")
-    db_manager.init_db()
-
-    # Планировщик
-    logger.info("Starting scheduler...")
-    auto_scheduler = AutoScheduler()
-    auto_scheduler.start()
-
-    # Event loop для Python 3.14
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # Создаём приложение
-    application = Application.builder().token(BOT_TOKEN).build()
-
-    # === ИМПОРТ ХЕНДЛЕРОВ ===
+def setup_handlers():
+    """Настройка всех хендлеров"""
     from handlers.start import (
         start_handler, reset_data_handler,
         restart_handler, back_handler
@@ -102,7 +81,6 @@ def main():
         cmd_settings, cmd_scheduler, scheduler_set
     )
 
-    # === ХЕНДЛЕРЫ ===
     application.add_handler(start_handler)
     application.add_handler(CommandHandler("menu", menu))
     application.add_handler(reset_data_handler)
@@ -139,11 +117,40 @@ def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     application.add_error_handler(error_handler)
 
-    logger.info("Bot is starting polling...")
-    application.run_polling(
-        drop_pending_updates=True,
-        allowed_updates=["message", "callback_query", "inline_query"]
-    )
+async def set_webhook():
+    """Устанавливаем webhook при старте"""
+    webhook_url = f"https://taxi-bot-rto.onrender.com/webhook/{BOT_TOKEN}"
+    await application.bot.set_webhook(url=webhook_url)
+    logger.info(f"Webhook set to: {webhook_url}")
+
+def main():
+    # Инициализация БД
+    logger.info("Initializing database...")
+    db_manager.init_db()
+
+    # Планировщик
+    logger.info("Starting scheduler...")
+    auto_scheduler = AutoScheduler()
+    auto_scheduler.start()
+
+    # Настройка хендлеров
+    setup_handlers()
+
+    # Event loop для Python 3.14
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    # Устанавливаем webhook
+    loop.run_until_complete(application.initialize())
+    loop.run_until_complete(set_webhook())
+
+    # Запускаем Flask
+    port = int(os.environ.get("PORT", 10000))
+    logger.info(f"Starting Flask on port {port}")
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
 if __name__ == '__main__':
     main()
