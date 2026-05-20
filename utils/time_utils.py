@@ -1,4 +1,3 @@
-# utils/time_utils.py
 from datetime import datetime, timedelta
 import pytz
 
@@ -50,9 +49,7 @@ def get_week_start(dt: datetime = None) -> datetime:
     """Начало недели (понедельник)"""
     if dt is None:
         dt = now_minsk()
-    # Сбросить время до начала дня
     start_of_day = dt.replace(hour=0, minute=0, second=0, microsecond=0)
-    # Отнять дни до понедельника
     monday = start_of_day - timedelta(days=start_of_day.weekday())
     return monday
 
