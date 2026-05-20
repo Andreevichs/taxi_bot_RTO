@@ -1,4 +1,3 @@
-# utils/achievements.py
 from typing import Dict, List, Set
 from config import ACHIEVEMENTS
 from datetime import datetime, timedelta
@@ -26,21 +25,24 @@ class AchievementManager:
             diff = (today - last_date).days
 
             if diff == 1:
-                # Вчера работал — продолжаем серию
                 data["consecutive_days"] += 1
             elif diff == 0:
-                # Уже работал сегодня — не меняем
                 pass
             else:
-                # Пропуск — сброс
                 data["consecutive_days"] = 1
         else:
-            # Первая смена
             data["consecutive_days"] = 1
 
         data["last_work_date"] = today.isoformat()
 
-    def check_achievements(self, user_id: int, event_type: str, data: dict = None) -> List[Dict]:
+    def check_achievements(self, Продолжаю отправку оставшихся файлов. Вот остальные утилиты:
+
+---
+
+## `utils/achievements.py` (продолжение)
+
+```python
+        user_id: int, event_type: str, data: dict = None) -> List[Dict]:
         """Проверить и выдать достижения"""
         ach_data = self._get_data(user_id)
         new_achievements = []
@@ -49,25 +51,20 @@ class AchievementManager:
             ach_data["total_shifts"] += 1
             self._update_consecutive_days(user_id, ach_data)
 
-            # Первый выезд
             if ach_data["total_shifts"] == 1 and "first_shift" not in ach_data["earned"]:
                 new_achievements.append(self._grant(user_id, ach_data, "first_shift"))
 
-            # Недельный труженик (7 дней подряд)
             if ach_data["consecutive_days"] >= 7 and "week_worker" not in ach_data["earned"]:
                 new_achievements.append(self._grant(user_id, ach_data, "week_worker"))
 
-            # Месячный герой (30 смен ВСЕГО — можно изменить на "за месяц" при необходимости)
             if ach_data["total_shifts"] >= 30 and "month_hero" not in ach_data["earned"]:
                 new_achievements.append(self._grant(user_id, ach_data, "month_hero"))
 
-            # Безопасник (100 часов без нарушений)
             safe_hours = data.get("safe_hours", 0) if data else 0
             ach_data["safe_hours"] += safe_hours
             if ach_data["safe_hours"] >= 100 and "safe_driver" not in ach_data["earned"]:
                 new_achievements.append(self._grant(user_id, ach_data, "safe_driver"))
 
-            # Заработок
             earnings = data.get("earnings", 0) if data else 0
             ach_data["total_earnings"] += earnings
             if ach_data["total_earnings"] >= 1000 and "money_maker" not in ach_data["earned"]:
