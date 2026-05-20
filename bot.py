@@ -17,7 +17,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === FLASK ДЛЯ RENDER + WEBHOOK ===
+# === FLASK + WEBHOOK ===
 app = Flask(__name__)
 
 # === ТОКЕН ===
@@ -25,8 +25,9 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN не задан!")
 
-# Создаём приложение глобально
-application = Application.builder().token(BOT_TOKEN).build()
+# Глобальные переменные для webhook
+application = None
+loop = None
 
 @app.route('/')
 def home():
@@ -38,16 +39,21 @@ def health():
 
 @app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
 def webhook():
-    """Получаем обновления от Telegram (синхронно)"""
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+    """Получаем обновления от Telegram"""
+    global application, loop
     
-    update = Update.de_json(request.get_json(force=True), application.bot)
-    loop.run_until_complete(application.process_update(update))
-    return 'OK'
+    try:
+        update = Update.de_json(request.get_json(force=True), application.bot)
+        # Используем asyncio.run_coroutine_threadsafe для правильного loop
+        future = asyncio.run_coroutine_threadsafe(
+            application.process_update(update), 
+            loop
+        )
+        future.result(timeout=10)  # Ждём завершения
+        return 'OK'
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return 'Error', 500
 
 # === ФУНКЦИИ ===
 async def menu(update: Update, context):
@@ -64,7 +70,7 @@ async def error_handler(update: object, context) -> None:
 async def handle_text(update: Update, context):
     await update.message.reply_text("Используйте /start или /menu для навигации.")
 
-def setup_handlers():
+def setup_handlers(application):
     """Настройка всех хендлеров"""
     from handlers.start import (
         start_handler, reset_data_handler,
@@ -125,6 +131,8 @@ def setup_handlers():
     application.add_error_handler(error_handler)
 
 def main():
+    global application, loop
+    
     # Инициализация БД
     logger.info("Initializing database...")
     db_manager.init_db()
@@ -134,17 +142,17 @@ def main():
     auto_scheduler = AutoScheduler()
     auto_scheduler.start()
 
+    # Создаём event loop в главном потоке
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    # Создаём приложение
+    application = Application.builder().token(BOT_TOKEN).build()
+    
     # Настройка хендлеров
-    setup_handlers()
+    setup_handlers(application)
 
-    # Event loop для Python 3.14
-    try:
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-    # Инициализируем приложение
+    # Инициализация приложения
     loop.run_until_complete(application.initialize())
     
     # Удаляем старый webhook и устанавливаем новый
@@ -154,10 +162,24 @@ def main():
     loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
     logger.info(f"Webhook set to: {webhook_url}")
 
-    # Запускаем Flask
-    port = int(os.environ.get("PORT", 10000))
-    logger.info(f"Starting Flask on port {port}")
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    # Запускаем Flask в отдельном потоке
+    def run_flask():
+        port = int(os.environ.get("PORT", 10000))
+        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
+
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    logger.info(f"Flask started on port {os.environ.get('PORT', 10000)}")
+
+    # Держим главный поток живым
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+    finally:
+        loop.run_until_complete(application.stop())
+        loop.close()
 
 if __name__ == '__main__':
     main()
