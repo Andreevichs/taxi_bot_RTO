@@ -66,7 +66,6 @@ async def handle_text(update: Update, context):
 
 
 def main():
-    # Создаём event loop явно (Python 3.14 fix)
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
@@ -128,12 +127,20 @@ def main():
         PORT = int(os.environ.get("PORT", 10000))
         WEBHOOK_URL = os.environ.get("WEBHOOK_URL", "")
 
-        application.run_webhook(
-            listen="0.0.0.0",
-            port=PORT,
-            webhook_url=WEBHOOK_URL,
-            secret_token=os.environ.get("SECRET_TOKEN", "")
-        )
+        # Проверка: WEBHOOK_URL должен быть https://
+        if not WEBHOOK_URL or not WEBHOOK_URL.startswith("https://"):
+            logger.error("❌ WEBHOOK_URL не задан или не начинается с https://")
+            logger.error("   Установите переменную окружения WEBHOOK_URL")
+            logger.error("   Пример: https://taxi-bot-rto.onrender.com")
+            logger.info("🔄 Переключаюсь на polling mode...")
+            application.run_polling(allowed_updates=Update.ALL_TYPES)
+        else:
+            application.run_webhook(
+                listen="0.0.0.0",
+                port=PORT,
+                webhook_url=WEBHOOK_URL,
+                secret_token=os.environ.get("SECRET_TOKEN", "")
+            )
     else:
         application.run_polling(allowed_updates=Update.ALL_TYPES)
 
