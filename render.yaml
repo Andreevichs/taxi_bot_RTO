@@ -1,15 +1,16 @@
 services:
   - type: web
-    name: taxi-rto-bot
+    name: taxi-bot-rto
     runtime: python
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn bot:app & python bot.py
+    startCommand: python bot.py
     envVars:
       - key: BOT_TOKEN
-        sync: false
-      - key: PYTHON_VERSION
-        value: 3.11.0
+        sync: false  # Задаётся вручную в панели Render
       - key: RENDER
         value: "true"
-    healthCheckPath: /health
+      - key: PORT
+        value: "10000"
+      - key: DB_PATH
+        value: "/tmp/taxi_bot.db"  # SQLite в tmp (сохраняется между перезапусками в пределах одного инстанса)
