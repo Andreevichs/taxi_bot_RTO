@@ -1,8 +1,6 @@
-# handlers/start.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
-# Единая клавиатура меню (чтобы не дублировать)
 MAIN_MENU_KEYBOARD = [
     [InlineKeyboardButton("🚗 Начать смену", callback_data="shift_start"),
      InlineKeyboardButton("⏹️ Закончить смену", callback_data="shift_end")],
@@ -42,7 +40,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     data = query.data
 
-    # Импорты вынесены в начало функции (не динамические)
     from .rto import cmd_start_shift, cmd_end_shift, cmd_break_start, cmd_break_end, cmd_status
     from .stats import cmd_stats, cmd_earnings, cmd_achievements, cmd_weather
     from .family import cmd_family
@@ -83,7 +80,6 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(MAIN_MENU_KEYBOARD)
         )
     except Exception:
-        # Если сообщение нельзя отредактировать — отправить новое
         await query.message.reply_text(
             "🚕 Главное меню\n\nВыберите действие:",
             reply_markup=InlineKeyboardMarkup(MAIN_MENU_KEYBOARD)
