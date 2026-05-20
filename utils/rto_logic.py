@@ -1,10 +1,9 @@
-# utils/rto_logic.py
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from .time_utils import now_minsk, format_duration, TIMEZONE, get_week_start
 from config import (
     MAX_DAILY_DRIVE, MAX_WEEKLY_DRIVE, MAX_CONTINUOUS_DRIVE,
-    MIN_BREAK, MIN_DAILY_REST, MAX_SHIFT
+    MIN_BREAK, MIN_DAILY_REST, MAX_SHIFT, MAX_CONSECUTIVE_DAYS
 )
 import database as db
 
@@ -35,8 +34,16 @@ class RTOSession:
                         "error": f"⏰ Отдых слишком короткий!\nМинимум: {format_duration(MIN_DAILY_REST)}\nПрошло: {format_duration(rest)}"
                     }
 
+        # Проверка: не более 6 дней подряд по РТО!
         week_start = get_week_start()
         week_shifts = db.get_user_shifts(self.user_id, since=week_start)
+        if len(week_shifts) >= MAX_CONSECUTIVE_DAYS:
+            return {
+                "ok": False,
+                "error": f"⚠️ РТО: Максимум {MAX_CONSECUTIVE_DAYS} дней подряд!\nОтдохните минимум {format_duration(MIN_DAILY_REST)}."
+            }
+
+        # Проверка лимита 56 часов в неделю
         weekly_driving = timedelta()
         for shift in week_shifts:
             if shift["end_time"]:
@@ -156,7 +163,6 @@ class RTOSession:
         now = now_minsk()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # Статистика за сегодня (всегда считаем)
         today_shifts = db.get_user_shifts(self.user_id, since=today_start)
         today_driving = timedelta()
         today_shifts_count = len(today_shifts)
@@ -188,13 +194,13 @@ class RTOSession:
                     datetime.fromisoformat(session["end"]) if isinstance(session["end"], str) else session["end"]
                 )
                 if (s_end - s_start) > MAX_CONTINUOUS_DRIVE:
-                    warnings.append(f"⚠️ Превышено 4 часа без перерыва! ({format_duration(s_end - s_start)})")
+                    warnings.append(f"⚠️ Превышено 4.5 часа без перерыва! ({format_duration(s_end - s_start)})")
 
             if today_driving > MAX_DAILY_DRIVE:
                 warnings.append("⚠️ Превышен лимит 9 часов вождения за сутки!")
 
             if shift_duration > MAX_SHIFT:
-                warnings.append("⚠️ Смена дольше 13 часов!")
+                warnings.append("⚠️ Смена дольше 10 часов!")
 
             fatigue = min(100, int((current_stats["driving"].total_seconds() / 3600) * 10))
 
@@ -202,7 +208,7 @@ class RTOSession:
                 "active": True,
                 "shift_duration": shift_duration,
                 "driving_today": today_driving,
-                "shifts_today": today_shifts_count,  # <-- ДОБАВЛЕНО!
+                "shifts_today": today_shifts_count,
                 "current_stats": current_stats,
                 "warnings": warnings,
                 "fatigue": fatigue,
