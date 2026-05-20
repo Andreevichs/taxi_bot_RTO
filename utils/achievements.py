@@ -1,89 +1,117 @@
+# utils/achievements.py
 from typing import Dict, List, Set
 from config import ACHIEVEMENTS
+from datetime import datetime, timedelta
+import database as db
+from .time_utils import now_minsk
+
 
 class AchievementManager:
     def __init__(self):
-        self.user_achievements: Dict[int, Set[str]] = {}  # user_id -> set of achievement_ids
-        self.user_stats: Dict[int, Dict] = {}  # user_id -> stats
-    
-    def init_user(self, user_id: int):
-        if user_id not in self.user_achievements:
-            self.user_achievements[user_id] = set()
-            self.user_stats[user_id] = {
-                "total_shifts": 0,
-                "consecutive_days": 0,
-                "total_earnings": 0,
-                "early_starts": 0,
-                "night_shifts": 0,
-                "safe_hours": 0,
-                "last_work_date": None
-            }
-    
+        pass
+
+    def _get_data(self, user_id: int) -> Dict:
+        return db.get_user_achievements_data(user_id)
+
+    def _save_data(self, user_id: int, data: Dict):
+        db.update_achievements(user_id, data)
+
+    def _update_consecutive_days(self, user_id: int, data: Dict):
+        """Обновить счётчик подряд идущих дней"""
+        today = now_minsk().date()
+        last_date_str = data.get("last_work_date")
+
+        if last_date_str:
+            last_date = datetime.fromisoformat(last_date_str).date()
+            diff = (today - last_date).days
+
+            if diff == 1:
+                # Вчера работал — продолжаем серию
+                data["consecutive_days"] += 1
+            elif diff == 0:
+                # Уже работал сегодня — не меняем
+                pass
+            else:
+                # Пропуск — сброс
+                data["consecutive_days"] = 1
+        else:
+            # Первая смена
+            data["consecutive_days"] = 1
+
+        data["last_work_date"] = today.isoformat()
+
     def check_achievements(self, user_id: int, event_type: str, data: dict = None) -> List[Dict]:
         """Проверить и выдать достижения"""
-        self.init_user(user_id)
+        ach_data = self._get_data(user_id)
         new_achievements = []
-        stats = self.user_stats[user_id]
-        
+
         if event_type == "shift_end":
-            stats["total_shifts"] += 1
-            
+            ach_data["total_shifts"] += 1
+            self._update_consecutive_days(user_id, ach_data)
+
             # Первый выезд
-            if stats["total_shifts"] == 1 and "first_shift" not in self.user_achievements[user_id]:
-                new_achievements.append(self._grant(user_id, "first_shift"))
-            
-            # Недельный труженик
-            if stats["consecutive_days"] >= 7 and "week_worker" not in self.user_achievements[user_id]:
-                new_achievements.append(self._grant(user_id, "week_worker"))
-            
-            # Месячный герой
-            if stats["total_shifts"] >= 30 and "month_hero" not in self.user_achievements[user_id]:
-                new_achievements.append(self._grant(user_id, "month_hero"))
-            
-            # Безопасник
+            if ach_data["total_shifts"] == 1 and "first_shift" not in ach_data["earned"]:
+                new_achievements.append(self._grant(user_id, ach_data, "first_shift"))
+
+            # Недельный труженик (7 дней подряд)
+            if ach_data["consecutive_days"] >= 7 and "week_worker" not in ach_data["earned"]:
+                new_achievements.append(self._grant(user_id, ach_data, "week_worker"))
+
+            # Месячный герой (30 смен ВСЕГО — можно изменить на "за месяц" при необходимости)
+            if ach_data["total_shifts"] >= 30 and "month_hero" not in ach_data["earned"]:
+                new_achievements.append(self._grant(user_id, ach_data, "month_hero"))
+
+            # Безопасник (100 часов без нарушений)
             safe_hours = data.get("safe_hours", 0) if data else 0
-            stats["safe_hours"] += safe_hours
-            if stats["safe_hours"] >= 100 and "safe_driver" not in self.user_achievements[user_id]:
-                new_achievements.append(self._grant(user_id, "safe_driver"))
-            
+            ach_data["safe_hours"] += safe_hours
+            if ach_data["safe_hours"] >= 100 and "safe_driver" not in ach_data["earned"]:
+                new_achievements.append(self._grant(user_id, ach_data, "safe_driver"))
+
             # Заработок
             earnings = data.get("earnings", 0) if data else 0
-            stats["total_earnings"] += earnings
-            if stats["total_earnings"] >= 1000 and "money_maker" not in self.user_achievements[user_id]:
-                new_achievements.append(self._grant(user_id, "money_maker"))
-        
+            ach_data["total_earnings"] += earnings
+            if ach_data["total_earnings"] >= 1000 and "money_maker" not in ach_data["earned"]:
+                new_achievements.append(self._grant(user_id, ach_data, "money_maker"))
+
         elif event_type == "shift_start":
             hour = data.get("hour", 12) if data else 12
-            if hour < 6 and "early_bird" not in self.user_achievements[user_id]:
-                new_achievements.append(self._grant(user_id, "early_bird"))
-            if hour >= 22 and "night_owl" not in self.user_achievements[user_id]:
-                new_achievements.append(self._grant(user_id, "night_owl"))
-        
+            if hour < 6 and "early_bird" not in ach_data["earned"]:
+                ach_data["early_starts"] += 1
+                if ach_data["early_starts"] >= 1:
+                    new_achievements.append(self._grant(user_id, ach_data, "early_bird"))
+            if hour >= 22 and "night_owl" not in ach_data["earned"]:
+                ach_data["night_shifts"] += 1
+                if ach_data["night_shifts"] >= 1:
+                    new_achievements.append(self._grant(user_id, ach_data, "night_owl"))
+
+        self._save_data(user_id, ach_data)
         return new_achievements
-    
-    def _grant(self, user_id: int, achievement_id: str) -> Dict:
-        self.user_achievements[user_id].add(achievement_id)
+
+    def _grant(self, user_id: int, ach_data: Dict, achievement_id: str) -> Dict:
+        if achievement_id not in ach_data["earned"]:
+            ach_data["earned"].append(achievement_id)
         ach = ACHIEVEMENTS[achievement_id]
         return {
             "id": achievement_id,
             "name": ach["name"],
             "desc": ach["desc"]
         }
-    
+
     def get_user_achievements(self, user_id: int) -> List[Dict]:
-        self.init_user(user_id)
+        ach_data = self._get_data(user_id)
         result = []
-        for ach_id in self.user_achievements[user_id]:
-            ach = ACHIEVEMENTS[ach_id]
-            result.append({"id": ach_id, **ach})
+        for ach_id in ach_data["earned"]:
+            if ach_id in ACHIEVEMENTS:
+                ach = ACHIEVEMENTS[ach_id]
+                result.append({"id": ach_id, **ach})
         return result
-    
+
     def get_progress(self, user_id: int) -> Dict:
-        self.init_user(user_id)
+        ach_data = self._get_data(user_id)
         total = len(ACHIEVEMENTS)
-        earned = len(self.user_achievements[user_id])
+        earned = len(ach_data["earned"])
         return {
             "earned": earned,
             "total": total,
-            "percent": round((earned / total) * 100, 1)
+            "percent": round((earned / total) * 100, 1) if total > 0 else 0
         }
