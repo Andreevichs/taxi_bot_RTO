@@ -1,8 +1,6 @@
-# config.py
 import os
 from datetime import timedelta
 
-# === ТОКЕН ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN or BOT_TOKEN == "ВАШ_ТОКЕН_СЮДА":
     raise ValueError(
@@ -12,10 +10,8 @@ if not BOT_TOKEN or BOT_TOKEN == "ВАШ_ТОКЕН_СЮДА":
         "   Value: ваш_токен_от_BotFather"
     )
 
-# === ВРЕМЯ ===
 TIMEZONE = "Europe/Minsk"
 
-# === РТО ПРАВИЛА БЕЛАРУСЬ ===
 MAX_DAILY_DRIVE = timedelta(hours=9)
 MAX_WEEKLY_DRIVE = timedelta(hours=56)
 MAX_CONTINUOUS_DRIVE = timedelta(hours=4)
@@ -23,13 +19,10 @@ MIN_BREAK = timedelta(minutes=45)
 MIN_DAILY_REST = timedelta(hours=11)
 MAX_SHIFT = timedelta(hours=13)
 
-# === ПРОГНОЗ ЗАРАБОТКА ===
-DEFAULT_HOURLY_RATE = 25  # BYN/час (можно менять в настройках)
+DEFAULT_HOURLY_RATE = 25
 
-# === СЕМЕЙНЫЙ ДОСТУП ===
 MAX_FAMILY_MEMBERS = 3
 
-# === ДОСТИЖЕНИЯ ===
 ACHIEVEMENTS = {
     "first_shift": {"name": "🚀 Первый выезд", "desc": "Завершите первую смену"},
     "week_worker": {"name": "📅 Недельный труженик", "desc": "7 дней подряд на линии"},
