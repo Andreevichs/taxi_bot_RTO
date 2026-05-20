@@ -1,3 +1,4 @@
+# utils/rto_logic.py
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from .time_utils import now_minsk, format_duration, TIMEZONE, get_week_start
@@ -155,6 +156,7 @@ class RTOSession:
         now = now_minsk()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
+        # Статистика за сегодня (всегда считаем)
         today_shifts = db.get_user_shifts(self.user_id, since=today_start)
         today_driving = timedelta()
         today_shifts_count = len(today_shifts)
@@ -200,6 +202,7 @@ class RTOSession:
                 "active": True,
                 "shift_duration": shift_duration,
                 "driving_today": today_driving,
+                "shifts_today": today_shifts_count,  # <-- ДОБАВЛЕНО!
                 "current_stats": current_stats,
                 "warnings": warnings,
                 "fatigue": fatigue,
