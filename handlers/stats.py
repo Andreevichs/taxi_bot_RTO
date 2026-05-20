@@ -1,4 +1,3 @@
-# handlers/stats.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.rto_logic import get_session
@@ -20,7 +19,6 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     weekly = session.get_weekly_stats()
     status = session.get_status()
 
-    # Реальная статистика за неделю
     week_start = get_week_start()
     week_shifts = db.get_user_shifts(user_id, since=week_start)
 
@@ -36,7 +34,6 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if weekly['limit_exceeded']:
         text += "⚠️ Лимит 56 часов превышен!\n"
 
-    # Добавить среднюю продолжительность смены
     if week_shifts:
         total_driving = sum(
             (s["end_time"] - s["start_time"]).total_seconds() if s["end_time"] else 0
@@ -50,11 +47,10 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_earnings(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Прогноз заработка на основе реальной статистики"""
+    """Прогноз заработка"""
     query = update.callback_query
     user_id = update.effective_user.id
 
-    # Получить средние часы за неделю
     week_start = get_week_start()
     week_shifts = db.get_user_shifts(user_id, since=week_start)
 
@@ -101,7 +97,6 @@ async def cmd_achievements(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         text += "Пока нет достижений. Начните смену! 🚕\n\n"
 
-    # Показать недоступные
     from config import ACHIEVEMENTS
     earned_ids = {a['id'] for a in user_ach}
     for ach_id, ach in ACHIEVEMENTS.items():
