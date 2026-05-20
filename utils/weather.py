@@ -1,9 +1,7 @@
-# utils/weather.py
 import httpx
 from typing import Optional
 from datetime import datetime, timedelta
 
-# Кэш погоды: {timestamp: data}
 _weather_cache = {"data": None, "expires": datetime.min}
 
 
@@ -34,7 +32,6 @@ async def get_minsk_weather() -> Optional[str]:
         wind = current.get("wind_speed_10m", 0)
         code = current.get("weather_code", 0)
 
-        # Расширенная расшифровка кодов погоды
         weather_emojis = {
             0: "☀️ Ясно",
             1: "🌤️ Преимущественно ясно",
@@ -69,13 +66,11 @@ async def get_minsk_weather() -> Optional[str]:
 
         result = f"{weather_desc}\n🌡️ {temp}°C\n💨 Ветер {wind} м/с"
 
-        # Кэшировать на 10 минут
         _weather_cache = {"data": result, "expires": now + timedelta(minutes=10)}
 
         return result
 
     except Exception as e:
-        # Fallback: если кэш есть — вернуть его, даже просроченный
         if _weather_cache["data"]:
             return _weather_cache["data"] + "\n(данные могут быть устаревшими)"
         return None
