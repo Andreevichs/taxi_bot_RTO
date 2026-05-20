@@ -2,11 +2,26 @@ import os
 import logging
 import asyncio
 import threading
-from flask import Flask, request
+from flask import Flask
 from telegram import Update
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler,
-    filters, CallbackQueryHandler, ConversationHandler
+    Application, CommandHandler, CallbackQueryHandler,
+    MessageHandler, ConversationHandler, filters
+)
+
+from config import BOT_TOKEN
+from handlers.start import start, button_handler
+from handlers.rto import cmd_start_shift, cmd_end_shift, cmd_break_start, cmd_break_end, cmd_status
+from handlers.stats import cmd_stats, cmd_earnings, cmd_achievements, cmd_weather
+from handlers.family import (
+    cmd_family, family_add_start, family_add_done, family_remove,
+    family_del_confirm, ASK_MEMBER_ID
+)
+from handlers.cars import (
+    cmd_cars, car_add, car_add_text, car_default, car_set_default
+)
+from handlers.settings import (
+    cmd_settings, cmd_scheduler, scheduler_set, scheduler_text
 )
 from utils.scheduler import AutoScheduler
 from utils.database import db_manager
@@ -17,17 +32,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === FLASK + WEBHOOK ===
+# Flask для UptimeRobot
 app = Flask(__name__)
-
-# === ТОКЕН ===
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не задан!")
-
-# Глобальные переменные для webhook
-application = None
-loop = None
 
 @app.route('/')
 def home():
@@ -37,149 +43,93 @@ def home():
 def health():
     return {"status": "ok", "time": "Europe/Minsk"}
 
-@app.route(f'/webhook/{BOT_TOKEN}', methods=['POST'])
-def webhook():
-    """Получаем обновления от Telegram"""
-    global application, loop
-    
-    try:
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        # Используем asyncio.run_coroutine_threadsafe для правильного loop
-        future = asyncio.run_coroutine_threadsafe(
-            application.process_update(update), 
-            loop
-        )
-        future.result(timeout=10)  # Ждём завершения
-        return 'OK'
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return 'Error', 500
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
 
-# === ФУНКЦИИ ===
-async def menu(update: Update, context):
-    from keyboards.inline import main_menu_keyboard
-    text = "Главное меню:\nВыберите раздел:"
-    if update.message:
-        await update.message.reply_text(text, reply_markup=main_menu_keyboard())
-    elif update.callback_query:
-        await update.callback_query.edit_message_text(text, reply_markup=main_menu_keyboard())
-
-async def error_handler(update: object, context) -> None:
-    logger.error(f"Update {update} caused error {context.error}")
-
-async def handle_text(update: Update, context):
-    await update.message.reply_text("Используйте /start или /menu для навигации.")
-
-def setup_handlers(application):
-    """Настройка всех хендлеров"""
-    from handlers.start import (
-        start_handler, reset_data_handler,
-        restart_handler, back_handler
-    )
-    from handlers.rto import (
-        cmd_start_shift, cmd_end_shift, cmd_break_start,
-        cmd_break_end, cmd_status
-    )
-    from handlers.stats import (
-        cmd_stats, cmd_earnings, cmd_achievements, cmd_weather
-    )
-    from handlers.cars import (
-        cmd_cars, car_add_conv, car_set_active_start,
-        car_activate, car_delete_start, car_delete_confirm
-    )
-    from handlers.family import (
-        cmd_family, family_add_conv, family_remove_start, family_del_confirm
-    )
-    from handlers.settings import (
-        cmd_settings, cmd_scheduler, scheduler_set
-    )
-
-    application.add_handler(start_handler)
-    application.add_handler(CommandHandler("menu", menu))
-    application.add_handler(reset_data_handler)
-    application.add_handler(restart_handler)
-    application.add_handler(back_handler)
-
-    application.add_handler(CallbackQueryHandler(cmd_start_shift, pattern='^shift_start$'))
-    application.add_handler(CallbackQueryHandler(cmd_end_shift, pattern='^shift_end$'))
-    application.add_handler(CallbackQueryHandler(cmd_break_start, pattern='^break_start$'))
-    application.add_handler(CallbackQueryHandler(cmd_break_end, pattern='^break_end$'))
-    application.add_handler(CallbackQueryHandler(cmd_status, pattern='^status$'))
-
-    application.add_handler(CallbackQueryHandler(cmd_stats, pattern='^stats$'))
-    application.add_handler(CallbackQueryHandler(cmd_earnings, pattern='^earnings$'))
-    application.add_handler(CallbackQueryHandler(cmd_achievements, pattern='^achievements$'))
-    application.add_handler(CallbackQueryHandler(cmd_weather, pattern='^weather$'))
-
-    application.add_handler(CallbackQueryHandler(cmd_cars, pattern='^cars$'))
-    application.add_handler(car_add_conv)
-    application.add_handler(CallbackQueryHandler(car_set_active_start, pattern='^car_set_active$'))
-    application.add_handler(CallbackQueryHandler(car_activate, pattern='^activate_car_'))
-    application.add_handler(CallbackQueryHandler(car_delete_start, pattern='^car_delete$'))
-    application.add_handler(CallbackQueryHandler(car_delete_confirm, pattern='^delete_car_'))
-
-    application.add_handler(CallbackQueryHandler(cmd_family, pattern='^family$'))
-    application.add_handler(family_add_conv)
-    application.add_handler(CallbackQueryHandler(family_remove_start, pattern='^family_remove$'))
-    application.add_handler(CallbackQueryHandler(family_del_confirm, pattern='^family_del_'))
-
-    application.add_handler(CallbackQueryHandler(cmd_settings, pattern='^settings$'))
-    application.add_handler(CallbackQueryHandler(cmd_scheduler, pattern='^scheduler$'))
-    application.add_handler(CallbackQueryHandler(scheduler_set, pattern='^scheduler_set$'))
-
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    application.add_error_handler(error_handler)
+# Инициализация планировщика
+auto_scheduler = AutoScheduler()
 
 def main():
-    global application, loop
-    
-    # Инициализация БД
-    logger.info("Initializing database...")
-    db_manager.init_db()
-
-    # Планировщик
-    logger.info("Starting scheduler...")
-    auto_scheduler = AutoScheduler()
-    auto_scheduler.start()
-
-    # Создаём event loop в главном потоке
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-
-    # Создаём приложение
-    application = Application.builder().token(BOT_TOKEN).build()
-    
-    # Настройка хендлеров
-    setup_handlers(application)
-
-    # Инициализация приложения
-    loop.run_until_complete(application.initialize())
-    
-    # Удаляем старый webhook и устанавливаем новый
-    loop.run_until_complete(application.bot.delete_webhook(drop_pending_updates=True))
-    
-    webhook_url = f"https://taxi-bot-rto.onrender.com/webhook/{BOT_TOKEN}"
-    loop.run_until_complete(application.bot.set_webhook(url=webhook_url))
-    logger.info(f"Webhook set to: {webhook_url}")
-
     # Запускаем Flask в отдельном потоке
-    def run_flask():
-        port = int(os.environ.get("PORT", 10000))
-        app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
-
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     logger.info(f"Flask started on port {os.environ.get('PORT', 10000)}")
 
-    # Держим главный поток живым
-    try:
-        loop.run_forever()
-    except KeyboardInterrupt:
-        logger.info("Shutting down...")
-    finally:
-        loop.run_until_complete(application.stop())
-        loop.close()
+    # Инициализация БД
+    db_manager.init_db()
+    
+    # Создаём приложение
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Запускаем планировщик
+    auto_scheduler.start()
+    
+    # === КОМАНДЫ ===
+    application.add_handler(CommandHandler("start", start))
+    
+    # === КНОПКИ МЕНЮ (все через button_handler) ===
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^back_menu$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^shift_"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^break_"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^status$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^stats$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^earnings$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^achievements$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^weather$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^scheduler$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^family$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^cars$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^settings$"))
+    
+    # === СЕМЕЙНЫЙ ДОСТУП ===
+    family_conv = ConversationHandler(
+        entry_points=[CallbackQueryHandler(family_add_start, pattern="^family_add$")],
+        states={
+            ASK_MEMBER_ID: [MessageHandler(filters.TEXT & ~filters.COMMAND, family_add_done)]
+        },
+        fallbacks=[CallbackQueryHandler(cmd_family, pattern="^family$")]
+    )
+    application.add_handler(family_conv)
+    application.add_handler(CallbackQueryHandler(family_remove, pattern="^family_remove$"))
+    application.add_handler(CallbackQueryHandler(family_del_confirm, pattern="^family_del_"))
+    application.add_handler(CallbackQueryHandler(cmd_family, pattern="^family$"))
+    
+    # === АВТО ===
+    application.add_handler(CallbackQueryHandler(cmd_cars, pattern="^cars$"))
+    application.add_handler(CallbackQueryHandler(car_add, pattern="^car_add$"))
+    application.add_handler(CallbackQueryHandler(car_default, pattern="^car_default$"))
+    application.add_handler(CallbackQueryHandler(car_set_default, pattern="^car_set_"))
+    
+    # === НАСТРОЙКИ / ПЛАНИРОВЩИК ===
+    application.add_handler(CallbackQueryHandler(cmd_settings, pattern="^settings$"))
+    application.add_handler(CallbackQueryHandler(cmd_scheduler, pattern="^scheduler$"))
+    application.add_handler(CallbackQueryHandler(scheduler_set, pattern="^scheduler_set$"))
+    
+    # === ТЕКСТОВЫЕ СООБЩЕНИЯ ===
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
+    # Запуск
+    logger.info("Starting bot with polling...")
+    
+    # === ИСПРАВЛЕНИЕ: polling с drop_pending_updates ===
+    application.run_polling(
+        drop_pending_updates=True,
+        allowed_updates=["message", "callback_query", "inline_query"]
+    )
 
-if __name__ == '__main__':
+async def handle_text(update: Update, context):
+    """Обработка текстовых сообщений"""
+    if context.user_data.get("awaiting_car"):
+        await car_add_text(update, context)
+    elif context.user_data.get("awaiting_schedule"):
+        await scheduler_text(update, context)
+    else:
+        await update.message.reply_text(
+            "Используйте /start для открытия меню.\n"
+            "Или отправьте команду."
+        )
+
+if __name__ == "__main__":
     main()
