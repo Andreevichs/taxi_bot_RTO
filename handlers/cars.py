@@ -1,32 +1,3 @@
-# handlers/cars.py
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import ContextTypes
-import database as db
-
-MAX_CARS = 5
-
-
-async def cmd_cars(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Управление авто"""
-    query = update.callback_query
-    user_id = update.effective_user.id
-
-    cars = db.get_user_cars(user_id)
-    default = db.get_default_car(user_id)
-
-    text = "🚙 Мои автомобили\n\n"
-    if cars:
-        for car in cars:
-            marker = " ✅" if car["name"] == default else ""
-            text += f"• {car['name']}{marker}\n"
- Продолжаю исправление файлов. Вот остальные файлы целиком:
-
----
-
-## Шаг 13 (продолжение): `handlers/cars.py` — полный файл
-
-```python
-# handlers/cars.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 import database as db
@@ -66,7 +37,6 @@ async def car_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await query.answer()
 
-    # Проверка лимита
     cars = db.get_user_cars(user_id)
     if len(cars) >= MAX_CARS:
         await query.edit_message_text(
@@ -117,7 +87,6 @@ async def car_add_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     success = db.add_car(user_id, car_name)
 
     if success:
-        # Если первое авто — сделать по умолчанию
         cars = db.get_user_cars(user_id)
         if len(cars) == 1:
             db.set_default_car(user_id, car_name)
@@ -210,10 +179,8 @@ async def car_del_confirm(update: Update, context: ContextTypes.DEFAULT_TYPE):
     car = query.data.replace("car_del_", "")
     db.remove_car(user_id, car)
 
-    # Если удалили авто по умолчанию — сбросить на "Основное"
     default = db.get_default_car(user_id)
     if default == car:
-        # Найти другое авто или оставить "Основное"
         cars = db.get_user_cars(user_id)
         if cars:
             db.set_default_car(user_id, cars[0]["name"])
