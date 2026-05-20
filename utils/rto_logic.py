@@ -1,201 +1,272 @@
+# utils/rto_logic.py
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
-from .time_utils import now_minsk, format_duration, TIMEZONE
+from .time_utils import now_minsk, format_duration, TIMEZONE, get_week_start
 from config import (
     MAX_DAILY_DRIVE, MAX_WEEKLY_DRIVE, MAX_CONTINUOUS_DRIVE,
     MIN_BREAK, MIN_DAILY_REST, MAX_SHIFT
 )
+import database as db
+
 
 class RTOSession:
-    def __init__(self):
-        self.shifts: List[Dict] = []  # {start, end, breaks[], car}
-        self.current_shift: Optional[Dict] = None
-        self.fatigue_level = 0  # 0-100
-        
+    def __init__(self, user_id: int):
+        self.user_id = user_id
+
     def start_shift(self, car: str = "Основное") -> Dict:
         """Начать смену"""
         now = now_minsk()
-        
+
+        # Проверка: нет ли уже активной смены?
+        active = db.get_active_shift(self.user_id)
+        if active:
+            return {
+                "ok": False,
+                "error": "❌ У вас уже есть активная смена! Закончите текущую перед началом новой."
+            }
+
         # Проверка отдыха
-        if self.shifts:
-            last_end = self.shifts[-1].get("end")
-            if last_end:
-                rest = now - last_end
+        shifts = db.get_user_shifts(self.user_id)
+        if shifts:
+            last_shift = shifts[-1]
+            if last_shift["end_time"]:
+                rest = now - last_shift["end_time"]
                 if rest < MIN_DAILY_REST:
                     return {
                         "ok": False,
-                        "error": f"Отдых слишком короткий! Минимум {format_duration(MIN_DAILY_REST)}, прошло {format_duration(rest)}"
+                        "error": f"⏰ Отдых слишком короткий!\nМинимум: {format_duration(MIN_DAILY_REST)}\nПрошло: {format_duration(rest)}"
                     }
-        
-        self.current_shift = {
-            "start": now,
-            "end": None,
-            "breaks": [],
-            "car": car,
-            "driving_sessions": [{"start": now, "end": None}]
-        }
-        
+
+        # Проверка лимита 56 часов в неделю
+        week_start = get_week_start()
+        week_shifts = db.get_user_shifts(self.user_id, since=week_start)
+        weekly_driving = timedelta()
+        for shift in week_shifts:
+            if shift["end_time"]:
+                stats = self._calc_shift_stats(shift)
+                weekly_driving += stats["driving"]
+
+        if weekly_driving >= MAX_WEEKLY_DRIVE:
+            return {
+                "ok": False,
+                "error": f"⚠️ Лимит 56 часов в неделю исчерпан!\nНакоплено: {format_duration(weekly_driving)}"
+            }
+
+        # Создать активную смену
+        db.save_active_shift(self.user_id, now, car)
         return {"ok": True, "start": now}
-    
+
     def start_break(self) -> Dict:
         """Начать перерыв"""
-        if not self.current_shift:
-            return {"ok": False, "error": "Нет активной смены"}
-        
+        active = db.get_active_shift(self.user_id)
+        if not active:
+            return {"ok": False, "error": "❌ Нет активной смены"}
+
         now = now_minsk()
-        
+
         # Закрыть текущую сессию вождения
-        if self.current_shift["driving_sessions"]:
-            last = self.current_shift["driving_sessions"][-1]
-            if last["end"] is None:
-                last["end"] = now
-        
-        self.current_shift["breaks"].append({"start": now, "end": None})
+        sessions = active["driving_sessions"]
+        if sessions:
+            last = sessions[-1]
+            if last.get("end") is None:
+                last["end"] = now.isoformat()
+
+        # Добавить перерыв
+        breaks = active["breaks"]
+        breaks.append({"start": now.isoformat(), "end": None})
+
+        db.update_active_shift(self.user_id, breaks=breaks, driving_sessions=sessions)
         return {"ok": True, "start": now}
-    
+
     def end_break(self) -> Dict:
         """Закончить перерыв"""
-        if not self.current_shift:
-            return {"ok": False, "error": "Нет активной смены"}
-        
+        active = db.get_active_shift(self.user_id)
+        if not active:
+            return {"ok": False, "error": "❌ Нет активной смены"}
+
         now = now_minsk()
-        
+
         # Закрыть перерыв
-        if self.current_shift["breaks"]:
-            last = self.current_shift["breaks"][-1]
-            if last["end"] is None:
-                last["end"] = now
-        
+        breaks = active["breaks"]
+        if breaks:
+            last = breaks[-1]
+            if last.get("end") is None:
+                last["end"] = now.isoformat()
+
         # Новая сессия вождения
-        self.current_shift["driving_sessions"].append({"start": now, "end": None})
+        sessions = active["driving_sessions"]
+        sessions.append({"start": now.isoformat(), "end": None})
+
+        db.update_active_shift(self.user_id, breaks=breaks, driving_sessions=sessions)
         return {"ok": True, "end": now}
-    
+
     def end_shift(self) -> Dict:
         """Закончить смену"""
-        if not self.current_shift:
-            return {"ok": False, "error": "Нет активной смены"}
-        
+        active = db.get_active_shift(self.user_id)
+        if not active:
+            return {"ok": False, "error": "❌ Нет активной смены"}
+
         now = now_minsk()
-        
+
         # Закрыть всё
-        if self.current_shift["driving_sessions"]:
-            last = self.current_shift["driving_sessions"][-1]
-            if last["end"] is None:
-                last["end"] = now
-        
-        for b in self.current_shift["breaks"]:
-            if b["end"] is None:
-                b["end"] = now
-        
-        self.current_shift["end"] = now
-        self.shifts.append(self.current_shift)
-        
-        # Расчёт статистики смены
-        stats = self._calc_shift_stats(self.current_shift)
-        self.current_shift = None
-        
-        return {"ok": True, "stats": stats}
-    
+        sessions = active["driving_sessions"]
+        if sessions:
+            last = sessions[-1]
+            if last.get("end") is None:
+                last["end"] = now.isoformat()
+
+        breaks = active["breaks"]
+        for b in breaks:
+            if b.get("end") is None:
+                b["end"] = now.isoformat()
+
+        # Обновить в БД и перенести в архив
+        db.update_active_shift(self.user_id, breaks=breaks, driving_sessions=sessions)
+        db.end_shift(self.user_id, now)
+
+        # Получить завершённую смену для статистики
+        shifts = db.get_user_shifts(self.user_id)
+        if shifts:
+            last_shift = shifts[-1]
+            stats = self._calc_shift_stats(last_shift)
+            return {"ok": True, "stats": stats}
+
+        return {"ok": False, "error": "Ошибка сохранения смены"}
+
     def _calc_shift_stats(self, shift: Dict) -> Dict:
         """Рассчитать статистику смены"""
-        total_duration = shift["end"] - shift["start"]
-        
+        start = shift["start_time"]
+        end = shift["end_time"] or now_minsk()
+        total_duration = end - start
+
         driving_time = timedelta()
         for session in shift["driving_sessions"]:
-            end = session["end"] or now_minsk()
-            driving_time += end - session["start"]
-        
+            s_start = datetime.fromisoformat(session["start"]) if isinstance(session["start"], str) else session["start"]
+            s_end = now_minsk() if session.get("end") is None else (
+                datetime.fromisoformat(session["end"]) if isinstance(session["end"], str) else session["end"]
+            )
+            driving_time += s_end - s_start
+
         break_time = timedelta()
         for b in shift["breaks"]:
-            end = b["end"] or now_minsk()
-            break_time += end - b["start"]
-        
+            b_start = datetime.fromisoformat(b["start"]) if isinstance(b["start"], str) else b["start"]
+            b_end = now_minsk() if b.get("end") is None else (
+                datetime.fromisoformat(b["end"]) if isinstance(b["end"], str) else b["end"]
+            )
+            break_time += b_end - b_start
+
         return {
             "total": total_duration,
             "driving": driving_time,
             "breaks": break_time,
             "car": shift["car"]
         }
-    
+
     def get_status(self) -> Dict:
         """Текущий статус РТО"""
         now = now_minsk()
-        
-        # Статистика за сегодня
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        # Статистика за сегодня
+        today_shifts = db.get_user_shifts(self.user_id, since=today_start)
         today_driving = timedelta()
-        today_shifts = 0
-        
-        for shift in self.shifts:
-            if shift["start"] >= today_start:
+        today_shifts_count = len(today_shifts)
+
+        for shift in today_shifts:
+            if shift["end_time"]:
                 stats = self._calc_shift_stats(shift)
                 today_driving += stats["driving"]
-                today_shifts += 1
-        
+
         # Если активная смена
-        if self.current_shift:
-            stats = self._calc_shift_stats({**self.current_shift, "end": now})
-            today_driving += stats["driving"]
-            today_shifts += 1
-            
+        active = db.get_active_shift(self.user_id)
+        if active:
+            # Добавить текущую смену к статистике дня
+            current_stats = self._calc_shift_stats({
+                "start_time": active["start_time"],
+                "end_time": now,
+                "driving_sessions": active["driving_sessions"],
+                "breaks": active["breaks"],
+                "car": active["car"]
+            })
+            today_driving += current_stats["driving"]
+            today_shifts_count += 1
+
+            shift_duration = now - active["start_time"]
+
             # Проверки
             warnings = []
-            
-            if stats["driving"] > MAX_CONTINUOUS_DRIVE:
-                warnings.append("⚠️ Превышено 4 часа без перерыва!")
-            
+
+            # Проверка непрерывного вождения
+            for session in active["driving_sessions"]:
+                s_start = datetime.fromisoformat(session["start"]) if isinstance(session["start"], str) else session["start"]
+                s_end = now if session.get("end") is None else (
+                    datetime.fromisoformat(session["end"]) if isinstance(session["end"], str) else session["end"]
+                )
+                if (s_end - s_start) > MAX_CONTINUOUS_DRIVE:
+                    warnings.append(f"⚠️ Превышено 4 часа без перерыва! ({format_duration(s_end - s_start)})")
+
             if today_driving > MAX_DAILY_DRIVE:
                 warnings.append("⚠️ Превышен лимит 9 часов вождения за сутки!")
-            
-            shift_duration = now - self.current_shift["start"]
+
             if shift_duration > MAX_SHIFT:
                 warnings.append("⚠️ Смена дольше 13 часов!")
-            
+
             # Усталость
-            self.fatigue_level = min(100, int((stats["driving"].total_seconds() / 3600) * 10))
-            
+            fatigue = min(100, int((current_stats["driving"].total_seconds() / 3600) * 10))
+
             return {
                 "active": True,
                 "shift_duration": shift_duration,
                 "driving_today": today_driving,
-                "current_stats": stats,
+                "current_stats": current_stats,
                 "warnings": warnings,
-                "fatigue": self.fatigue_level,
-                "car": self.current_shift["car"]
+                "fatigue": fatigue,
+                "car": active["car"]
             }
-        
+
         # Нет активной смены
         return {
             "active": False,
             "driving_today": today_driving,
-            "shifts_today": today_shifts,
-            "fatigue": max(0, self.fatigue_level - 20)
+            "shifts_today": today_shifts_count,
+            "fatigue": 0
         }
-    
+
     def get_weekly_stats(self) -> Dict:
         """Статистика за неделю"""
-        from .time_utils import get_week_start
         week_start = get_week_start()
-        
+
+        week_shifts = db.get_user_shifts(self.user_id, since=week_start)
         weekly_driving = timedelta()
-        shifts_count = 0
-        
-        for shift in self.shifts:
-            if shift["start"] >= week_start:
+        shifts_count = len(week_shifts)
+
+        for shift in week_shifts:
+            if shift["end_time"]:
                 stats = self._calc_shift_stats(shift)
                 weekly_driving += stats["driving"]
-                shifts_count += 1
-        
-        if self.current_shift:
-            stats = self._calc_shift_stats({**self.current_shift, "end": now_minsk()})
-            weekly_driving += stats["driving"]
+
+        # Добавить активную смену
+        active = db.get_active_shift(self.user_id)
+        if active:
+            current_stats = self._calc_shift_stats({
+                "start_time": active["start_time"],
+                "end_time": now_minsk(),
+                "driving_sessions": active["driving_sessions"],
+                "breaks": active["breaks"],
+                "car": active["car"]
+            })
+            weekly_driving += current_stats["driving"]
             shifts_count += 1
-        
+
         remaining = MAX_WEEKLY_DRIVE - weekly_driving
-        
+
         return {
             "driving": weekly_driving,
             "shifts": shifts_count,
             "remaining": remaining if remaining.total_seconds() > 0 else timedelta(),
             "limit_exceeded": remaining.total_seconds() < 0
         }
+
+
+def get_session(user_id: int) -> RTOSession:
+    return RTOSession(user_id)
