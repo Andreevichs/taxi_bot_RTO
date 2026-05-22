@@ -72,11 +72,11 @@ class RTOSession:
         shifts = db.get_user_shifts(self.user_id)
         if not shifts:
             return 0
-        
+
         work_dates = set()
         for shift in shifts:
             work_dates.add(shift["start_time"].date())
-        
+
         today = now_minsk().date()
         consecutive = 0
         for i in range(MAX_CONSECUTIVE_DAYS + 2):
@@ -85,7 +85,7 @@ class RTOSession:
                 consecutive += 1
             else:
                 break
-        
+
         return consecutive
 
     def start_break(self) -> Dict:
@@ -165,11 +165,13 @@ class RTOSession:
 
         # Проверка: не превышено ли время смены?
         shift_duration = now - active["start_time"]
+        warnings = []
+
         if shift_duration > MAX_SHIFT:
-            return {
-                "ok": False,
-                "error": f"🔴 РТО: Смена длится {format_duration(shift_duration)}!\nМаксимум: {format_duration(MAX_SHIFT)}\n❌ Немедленно завершите смену!"
-            }
+            warnings.append(
+                f"⚠️ Смена длится {format_duration(shift_duration)}! "
+                f"Максимум: {format_duration(MAX_SHIFT)}"
+            )
 
         # Закрыть всё
         sessions = active["driving_sessions"]
@@ -190,7 +192,10 @@ class RTOSession:
         if shifts:
             last_shift = shifts[-1]
             stats = self._calc_shift_stats(last_shift)
-            return {"ok": True, "stats": stats}
+            result = {"ok": True, "stats": stats, "end_time": now}
+            if warnings:
+                result["warnings"] = warnings
+            return result
 
         return {"ok": False, "error": "Ошибка сохранения смены"}
 
