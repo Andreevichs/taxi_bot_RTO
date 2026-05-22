@@ -10,8 +10,6 @@ import database as db
 achievements = AchievementManager()
 
 
-# handlers/rto.py (фрагмент - добавить в cmd_start_shift)
-
 async def cmd_start_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начать смену"""
     query = update.callback_query
@@ -69,7 +67,37 @@ async def cmd_end_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
         scheduler.stop_shift_monitoring(user_id)
 
         stats = result["stats"]
-        # ... остальной код без изменений ...
+        
+        # Проверить достижения
+        new_ach = achievements.check_achievements(
+            user_id, "shift_end",
+            {
+                "safe_hours": stats["driving"].total_seconds() / 3600,
+                "earnings": calculate_earnings(user_id, stats["driving"])["total"]
+            }
+        )
+
+        text = (f"⏹️ Смена завершена!\n"
+                f"🕐 {format_datetime(result.get('end_time', now_minsk()))}\n"
+                f"🚗 За рулём: {format_duration(stats['driving'])}\n"
+                f"☕ Перерывы: {format_duration(stats['breaks'])}\n"
+                f"🚙 Авто: {stats['car']}\n")
+
+        if result.get("warnings"):
+            text += "\n⚠️ Внимание:\n"
+            for w in result["warnings"]:
+                text += f"• {w}\n"
+
+        if new_ach:
+            text += "\n🏆 Новое достижение!\n"
+            for ach in new_ach:
+                text += f"• {ach['name']} — {ach['desc']}\n"
+
+        keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
+        await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def cmd_break_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -145,8 +173,8 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"📊 За неделю: {format_duration(weekly['driving'])}\n"
                 f"⏳ Осталось неделя: {format_duration(weekly['remaining'])}")
 
-        if weekly["limit_exceeded"]:
-            text += "\n\n⚠️ Лимит 56 часов превышен!"
+    if weekly["limit_exceeded"]:
+        text += "\n\n⚠️ Лимит 56 часов превышен!"
 
     keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
