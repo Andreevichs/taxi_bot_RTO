@@ -10,6 +10,8 @@ import database as db
 achievements = AchievementManager()
 
 
+# handlers/rto.py (фрагмент - добавить в cmd_start_shift)
+
 async def cmd_start_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Начать смену"""
     query = update.callback_query
@@ -23,6 +25,11 @@ async def cmd_start_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result["ok"]:
         hour = now_minsk().hour
         new_ach = achievements.check_achievements(user_id, "shift_start", {"hour": hour})
+
+        # ЗАПУСТИТЬ МОНИТОРИНГ СМЕНЫ (уведомления)
+        from utils.scheduler import AutoScheduler
+        scheduler = AutoScheduler()
+        scheduler.start_shift_monitoring(user_id)
 
         text = (f"🟢 Смена начата!\n"
                 f"🕐 {format_datetime(result['start'])}\n"
@@ -56,33 +63,13 @@ async def cmd_end_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     result = session.end_shift()
 
     if result["ok"]:
+        # ОСТАНОВИТЬ МОНИТОРИНГ СМЕНЫ
+        from utils.scheduler import AutoScheduler
+        scheduler = AutoScheduler()
+        scheduler.stop_shift_monitoring(user_id)
+
         stats = result["stats"]
-
-        earnings_data = calculate_earnings(user_id, stats["driving"])
-
-        new_ach = achievements.check_achievements(user_id, "shift_end", {
-            "safe_hours": stats["driving"].total_seconds() / 3600,
-            "earnings": earnings_data["total"]
-        })
-
-        text = (f"🔴 Смена завершена!\n\n"
-                f"⏱ Общее время: {format_duration(stats['total'])}\n"
-                f"🚗 За рулём: {format_duration(stats['driving'])}\n"
-                f"☕ Перерывы: {format_duration(stats['breaks'])}\n"
-                f"🚙 Авто: {stats['car']}\n"
-                f"💰 Заработок: ~{earnings_data['total']} BYN\n"
-                f"💵 Ставка: {earnings_data['rate']} BYN/час\n\n")
-
-        if new_ach:
-            text += "🏆 Новые достижения!\n"
-            for ach in new_ach:
-                text += f"• {ach['name']} — {ach['desc']}\n"
-
-        keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
+        # ... остальной код без изменений ...
 
 
 async def cmd_break_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
