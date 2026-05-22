@@ -89,7 +89,13 @@ def main():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
+    # bot.py - в main() после создания application
+
     application = Application.builder().token(BOT_TOKEN).build()
+
+    # Установить бот для уведомлений
+    from utils.scheduler import set_bot_instance
+    set_bot_instance(application.bot)
 
     auto_scheduler = AutoScheduler()
     auto_scheduler.start()
