@@ -31,7 +31,7 @@ from handlers.settings import (
     cmd_test_menu, test_break_30, test_critical_30,
     ASK_SCHEDULE, ASK_RATE
 )
-from utils.scheduler import AutoScheduler
+from utils.scheduler import AutoScheduler, set_application
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -94,9 +94,8 @@ def main():
 
     application = Application.builder().token(BOT_TOKEN).build()
 
-    # Установить бот для уведомлений
-    from utils.scheduler import set_bot_instance
-    set_bot_instance(application.bot)
+    # Установить application для уведомлений (JobQueue)
+    set_application(application)
 
     auto_scheduler = AutoScheduler()
     auto_scheduler.start()
