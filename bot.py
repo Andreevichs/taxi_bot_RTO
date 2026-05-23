@@ -28,6 +28,7 @@ from handlers.cars import (
 from handlers.settings import (
     cmd_settings, cmd_scheduler, scheduler_set, scheduler_text,
     scheduler_del, set_rate_start, set_rate_done,
+    cmd_test_menu, test_break_30, test_critical_30,
     ASK_SCHEDULE, ASK_RATE
 )
 from utils.scheduler import AutoScheduler
@@ -48,7 +49,6 @@ def home():
 def health():
     return {"status": "ok", "time": "Europe/Minsk"}
 
-
 async def handle_text(update: Update, context):
     """Обработка текстовых сообщений"""
     if context.user_data.get("awaiting_car"):
@@ -65,13 +65,11 @@ async def handle_text(update: Update, context):
             "Или отправьте команду."
         )
 
-
 def run_flask():
     """Запустить Flask в отдельном потоке"""
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"Запуск Flask на порту {port}...")
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
-
 
 def main():
     # Запустить Flask ПЕРЕД ботом, чтобы Render увидел порт
@@ -83,13 +81,16 @@ def main():
         time.sleep(2)
         logger.info("Flask запущен")
 
+    # АВТООЧИСТКА ЗАВИСШИХ СМЕН (старше 24 часов)
+    cleaned = db.cleanup_stale_shifts(max_hours=24)
+    if cleaned > 0:
+        logger.info(f"Автоочистка: завершено {cleaned} зависших смен(ы)")
+
     try:
         loop = asyncio.get_event_loop()
     except RuntimeError:
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
-
-    # bot.py - в main() после создания application
 
     application = Application.builder().token(BOT_TOKEN).build()
 
@@ -115,6 +116,11 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^family$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^cars$"))
     application.add_handler(CallbackQueryHandler(button_handler, pattern="^settings$"))
+
+    # Тестовые кнопки
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^test_menu$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^test_break_30$"))
+    application.add_handler(CallbackQueryHandler(button_handler, pattern="^test_critical_30$"))
 
     family_conv = ConversationHandler(
         entry_points=[CallbackQueryHandler(family_add_start, pattern="^family_add$")],
@@ -147,7 +153,6 @@ def main():
     logger.info("Starting bot in polling mode...")
 
     application.run_polling(allowed_updates=Update.ALL_TYPES)
-
 
 if __name__ == "__main__":
     main()
