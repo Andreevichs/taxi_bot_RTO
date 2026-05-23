@@ -1,3 +1,4 @@
+# handlers/settings.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from utils.scheduler import AutoScheduler
@@ -8,7 +9,6 @@ scheduler = AutoScheduler()
 
 ASK_SCHEDULE = 2
 ASK_RATE = 3
-
 
 async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Настройки"""
@@ -26,10 +26,79 @@ async def cmd_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("💵 Изменить ставку", callback_data="set_rate")],
         [InlineKeyboardButton("⏰ Планировщик", callback_data="scheduler")],
         [InlineKeyboardButton("🔔 Уведомления", callback_data="notifications")],
+        [InlineKeyboardButton("🧪 Тест уведомлений", callback_data="test_menu")],
         [InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]
     ]
 
     await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def cmd_test_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Меню тестовых уведомлений"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    text = ("🧪 Тестовые уведомления\n\n"
+            "Выберите тест:\n\n"
+            "1️⃣ Уведомление через 30 сек — типа 'на отдых'\n"
+            "2️⃣ Уведомление через 30 сек — типа 'критично РТО'\n\n"
+            "Уведомление придёт отдельным сообщением.")
+
+    keyboard = [
+        [InlineKeyboardButton("☕ Тест: Перерыв (30 сек)", callback_data="test_break_30")],
+        [InlineKeyboardButton("🔴 Тест: Критично РТО (30 сек)", callback_data="test_critical_30")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="settings")]
+    ]
+
+    await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def test_break_30(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Тест: уведомление о перерыве через 30 секунд"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    scheduler.send_test_notification(
+        user_id,
+        delay_seconds=30,
+        message=("☕ ТЕСТ: Пора на перерыв!\n\n"
+                 "🔴 РТО: Вы за рулём 4.5 часа!\n"
+                 "⚠️ Нужен перерыв 45 минут!\n"
+                 "Нажмите ☕ Перерыв в меню бота.")
+    )
+
+    await query.edit_message_text(
+        "✅ Тестовое уведомление запланировано!\n\n"
+        "☕ Через 30 секунд придёт сообщение типа 'на отдых'.\n\n"
+        "Если не придёт — проверь логи Render.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="test_menu")]
+        ])
+    )
+
+
+async def test_critical_30(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Тест: критичное уведомление РТО через 30 секунд"""
+    query = update.callback_query
+    user_id = update.effective_user.id
+
+    scheduler.send_test_notification(
+        user_id,
+        delay_seconds=30,
+        message=("🔴 ТЕСТ: КРИТИЧНОЕ УВЕДОМЛЕНИЕ РТО!\n\n"
+                 "⚠️ Смена длится 10:30!\n"
+                 "Максимум: 10:00\n\n"
+                 "❌ Немедленно завершите смену!")
+    )
+
+    await query.edit_message_text(
+        "✅ Тестовое уведомление запланировано!\n\n"
+        "🔴 Через 30 секунд придёт критичное сообщение РТО.\n\n"
+        "Если не придёт — проверь логи Render.",
+        reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton("◀️ Назад", callback_data="test_menu")]
+        ])
+    )
 
 
 async def cmd_scheduler(update: Update, context: ContextTypes.DEFAULT_TYPE):
