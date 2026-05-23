@@ -110,6 +110,13 @@ async def cmd_break_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if result["ok"]:
         text = f"☕ Перерыв начат!\n🕐 {format_datetime(result['start'])}"
+        
+        # Показать предупреждения (если есть)
+        if result.get("warnings"):
+            text += "\n\n⚠️ Внимание:\n"
+            for w in result["warnings"]:
+                text += f"• {w}\n"
+        
         keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
