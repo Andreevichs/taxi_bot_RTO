@@ -1,3 +1,4 @@
+# handlers/start.py
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
@@ -17,7 +18,6 @@ MAIN_MENU_KEYBOARD = [
     [InlineKeyboardButton("⚙️ Настройки", callback_data="settings")]
 ]
 
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Стартовое меню"""
     user = update.effective_user
@@ -32,7 +32,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Обработчик кнопок меню"""
     query = update.callback_query
@@ -44,7 +43,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     from .stats import cmd_stats, cmd_earnings, cmd_achievements, cmd_weather
     from .family import cmd_family
     from .cars import cmd_cars
-    from .settings import cmd_settings, cmd_scheduler
+    from .settings import (
+        cmd_settings, cmd_scheduler, scheduler_set, scheduler_del,
+        set_rate_start, cmd_test_menu, test_break_30, test_critical_30
+    )
 
     handlers = {
         "shift_start": cmd_start_shift,
@@ -61,6 +63,14 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "cars": cmd_cars,
         "settings": cmd_settings,
         "back_menu": back_to_menu,
+        # Тестовые кнопки
+        "test_menu": cmd_test_menu,
+        "test_break_30": test_break_30,
+        "test_critical_30": test_critical_30,
+        # Настройки
+        "scheduler_set": scheduler_set,
+        "scheduler_del": scheduler_del,
+        "set_rate": set_rate_start,
     }
 
     handler = handlers.get(data)
@@ -68,7 +78,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await handler(update, context)
     else:
         await query.edit_message_text("❌ Неизвестная команда")
-
 
 async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Вернуться в меню"""
