@@ -4,18 +4,19 @@ from typing import Dict, Optional, Callable
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
+from apscheduler.triggers.date import DateTrigger
 from .time_utils import now_minsk, TIMEZONE, parse_schedule_time
 import database as db
+import threading
+import asyncio
 
 # Глобальная ссылка на бот для отправки сообщений
 _bot_instance = None
-
 
 def set_bot_instance(bot):
     """Установить экземпляр бота для отправки уведомлений"""
     global _bot_instance
     _bot_instance = bot
-
 
 class AutoScheduler:
     _instance = None
@@ -33,10 +34,15 @@ class AutoScheduler:
         self.scheduler = BackgroundScheduler(timezone=TIMEZONE)
         self.reminders: Dict[int, list] = {}
         self.active_jobs: Dict[int, list] = {}  # user_id -> list of job IDs
+        self._bot_app = None  # Ссылка на application для отправки сообщений
 
     def start(self):
         if not self.scheduler.running:
             self.scheduler.start()
+
+    def set_bot_app(self, application):
+        """Установить application для отправки сообщений через job_queue"""
+        self._bot_app = application
 
     def set_schedule(self, user_id: int, morning_start: str, morning_end: str,
                      evening_start: str, evening_end: str):
@@ -130,11 +136,45 @@ class AutoScheduler:
                     pass
             del self.active_jobs[user_id]
 
-    def _check_shift_status(self, user_id: int):
-        """Проверить статус смены каждые 15 минут"""
-        if not _bot_instance:
+    def send_test_notification(self, user_id: int, delay_seconds: int = 30, message: str = "Тестовое уведомление"):
+        """Отправить тестовое уведомление через delay_seconds секунд"""
+        run_time = datetime.now(TIMEZONE) + timedelta(seconds=delay_seconds)
+        
+        job = self.scheduler.add_job(
+            self._send_notification_sync,
+            trigger=DateTrigger(run_date=run_time),
+            args=[user_id, message],
+            id=f"test_notification_{user_id}_{datetime.now().timestamp()}",
+            replace_existing=False
+        )
+        return job.id
+
+    def _send_notification_sync(self, user_id: int, message: str):
+        """Отправить уведомление синхронно (для вызова из APScheduler)"""
+        if _bot_instance is None:
+            print(f"[_send_notification_sync] Бот не инициализирован!")
             return
 
+        try:
+            # Создаём новый event loop для отправки
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            async def send_msg():
+                try:
+                    await _bot_instance.send_message(chat_id=user_id, text=message)
+                    print(f"[_send_notification_sync] Уведомление отправлено пользователю {user_id}")
+                except Exception as e:
+                    print(f"[_send_notification_sync] Ошибка отправки: {e}")
+            
+            loop.run_until_complete(send_msg())
+            loop.close()
+            
+        except Exception as e:
+            print(f"[_send_notification_sync] Критическая ошибка: {e}")
+
+    def _check_shift_status(self, user_id: int):
+        """Проверить статус смены каждые 15 минут"""
         from utils.rto_logic import get_session
         from utils.time_utils import format_duration
 
@@ -146,27 +186,23 @@ class AutoScheduler:
 
         # Проверка: усталость > 80%
         if status["fatigue"] >= 80:
-            asyncio = __import__('asyncio')
-            asyncio.create_task(
-                self._send_notification(user_id, "⚠️ Высокая усталость!\n😴 Усталость: 80%+\nРекомендуется завершить смену.")
+            self._send_notification_sync(
+                user_id,
+                "⚠️ Высокая усталость!\n😴 Усталость: 80%+\nРекомендуется завершить смену."
             )
 
         # Проверка: осталось мало времени до лимита недели
         weekly = session.get_weekly_stats()
         remaining_hours = weekly["remaining"].total_seconds() / 3600
         if remaining_hours < 5:
-            asyncio = __import__('asyncio')
-            asyncio.create_task(
-                self._send_notification(user_id, f"⚠️ Мало времени до лимита недели!\nОсталось: {remaining_hours:.1f} часов")
+            self._send_notification_sync(
+                user_id,
+                f"⚠️ Мало времени до лимита недели!\nОсталось: {remaining_hours:.1f} часов"
             )
 
     def _remind_break(self, user_id: int):
         """Напомнить о перерыве через 4.5 часа"""
-        if not _bot_instance:
-            return
-
         from utils.rto_logic import get_session
-        from utils.time_utils import format_duration
 
         session = get_session(user_id)
         status = session.get_status()
@@ -180,21 +216,15 @@ class AutoScheduler:
             last_session = active["driving_sessions"][-1]
             if last_session.get("end") is None:
                 # Всё ещё за рулём!
-                asyncio = __import__('asyncio')
-                asyncio.create_task(
-                    self._send_notification(
-                        user_id,
-                        "🔴 РТО: Вы за рулём 4.5 часа!\n\n"
-                        "⚠️ Нужен перерыв 45 минут!\n"
-                        "Нажмите ☕ Перерыв в меню бота."
-                    )
+                self._send_notification_sync(
+                    user_id,
+                    "🔴 РТО: Вы за рулём 4.5 часа!\n\n"
+                    "⚠️ Нужен перерыв 45 минут!\n"
+                    "Нажмите ☕ Перерыв в меню бота."
                 )
 
     def _remind_daily_limit(self, user_id: int):
         """Напомнить о лимите 9 часов за сутки"""
-        if not _bot_instance:
-            return
-
         from utils.rto_logic import get_session
 
         session = get_session(user_id)
@@ -204,23 +234,12 @@ class AutoScheduler:
             return
 
         if status["driving_today"].total_seconds() >= 9 * 3600:
-            asyncio = __import__('asyncio')
-            asyncio.create_task(
-                self._send_notification(
-                    user_id,
-                    "🔴 РТО: Лимит 9 часов в сутки достигнут!\n\n"
-                    "⚠️ Немедленно завершите смену!\n"
-                    "Нажмите ⏹️ Закончить смену в меню."
-                )
+            self._send_notification_sync(
+                user_id,
+                "🔴 РТО: Лимит 9 часов в сутки достигнут!\n\n"
+                "⚠️ Немедленно завершите смену!\n"
+                "Нажмите ⏹️ Закончить смену в меню."
             )
-
-    async def _send_notification(self, user_id: int, message: str):
-        """Отправить уведомление пользователю"""
-        if _bot_instance:
-            try:
-                await _bot_instance.send_message(chat_id=user_id, text=message)
-            except Exception as e:
-                print(f"Ошибка отправки уведомления: {e}")
 
     def add_reminder(self, user_id: int, time_str: str, callback: Callable, message: str):
         """Добавить напоминание по времени"""
