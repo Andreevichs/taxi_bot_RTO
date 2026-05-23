@@ -96,7 +96,8 @@ class RTOSession:
 
         now = now_minsk()
 
-        # Проверка: не превышено ли 4.5 часа без перерыва?
+        # ПРЕДУПРЕЖДЕНИЕ (не блокировка): не превышено ли 4.5 часа без перерыва?
+        warnings = []
         sessions = active["driving_sessions"]
         if sessions:
             last_session = sessions[-1]
@@ -104,10 +105,10 @@ class RTOSession:
                 session_start = datetime.fromisoformat(last_session["start"]) if isinstance(last_session["start"], str) else last_session["start"]
                 driving_without_break = now - session_start
                 if driving_without_break > MAX_CONTINUOUS_DRIVE:
-                    return {
-                        "ok": False,
-                        "error": f"🔴 РТО: Вы за рулём {format_duration(driving_without_break)}!\nМаксимум без перерыва: {format_duration(MAX_CONTINUOUS_DRIVE)}\n❌ Нужен перерыв 45 минут!"
-                    }
+                    warnings.append(
+                        f"⚠️ Вы за рулём {format_duration(driving_without_break)}! "
+                        f"Максимум без перерыва: {format_duration(MAX_CONTINUOUS_DRIVE)}"
+                    )
 
         # Закрыть текущую сессию вождения
         if sessions:
@@ -119,7 +120,11 @@ class RTOSession:
         breaks.append({"start": now.isoformat(), "end": None})
 
         db.update_active_shift(self.user_id, breaks=breaks, driving_sessions=sessions)
-        return {"ok": True, "start": now}
+        
+        result = {"ok": True, "start": now}
+        if warnings:
+            result["warnings"] = warnings
+        return result
 
     def end_break(self) -> Dict:
         """Закончить перерыв"""
