@@ -1,22 +1,16 @@
 # utils/scheduler.py
 from datetime import datetime, timedelta
 from typing import Dict, Optional, Callable
-from apscheduler.schedulers.background import BackgroundScheduler
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.triggers.interval import IntervalTrigger
-from apscheduler.triggers.date import DateTrigger
-from .time_utils import now_minsk, TIMEZONE, parse_schedule_time
+from telegram.ext import Application
 import database as db
-import threading
-import asyncio
 
-# Глобальная ссылка на бот для отправки сообщений
-_bot_instance = None
+# Глобальная ссылка на application
+_app_instance = None
 
-def set_bot_instance(bot):
-    """Установить экземпляр бота для отправки уведомлений"""
-    global _bot_instance
-    _bot_instance = bot
+def set_application(app):
+    """Установить application для отправки уведомлений через job_queue"""
+    global _app_instance
+    _app_instance = app
 
 class AutoScheduler:
     _instance = None
@@ -31,18 +25,11 @@ class AutoScheduler:
         if self._initialized:
             return
         self._initialized = True
-        self.scheduler = BackgroundScheduler(timezone=TIMEZONE)
-        self.reminders: Dict[int, list] = {}
-        self.active_jobs: Dict[int, list] = {}  # user_id -> list of job IDs
-        self._bot_app = None  # Ссылка на application для отправки сообщений
+        self.active_jobs: Dict[int, list] = {}  # user_id -> list of job names
 
     def start(self):
-        if not self.scheduler.running:
-            self.scheduler.start()
-
-    def set_bot_app(self, application):
-        """Установить application для отправки сообщений через job_queue"""
-        self._bot_app = application
+        """JobQueue стартует автоматически с application"""
+        pass
 
     def set_schedule(self, user_id: int, morning_start: str, morning_end: str,
                      evening_start: str, evening_end: str):
@@ -55,6 +42,7 @@ class AutoScheduler:
 
     def get_next_shift(self, user_id: int) -> Optional[Dict]:
         """Когда следующая смена"""
+        from utils.time_utils import now_minsk, parse_schedule_time
         schedule = db.get_schedule(user_id)
         if not schedule:
             return None
@@ -94,91 +82,94 @@ class AutoScheduler:
 
     def start_shift_monitoring(self, user_id: int):
         """Начать мониторинг смены для автоматических уведомлений"""
+        if _app_instance is None:
+            return
+
         # Удалить старые задачи для этого пользователя
         self.stop_shift_monitoring(user_id)
 
-        # Задача 1: Проверка каждые 15 минут (перерыв, усталость, лимиты)
-        job1 = self.scheduler.add_job(
+        job_queue = _app_instance.job_queue
+
+        # Задача 1: Проверка каждые 15 минут
+        job1 = job_queue.run_repeating(
             self._check_shift_status,
-            trigger=IntervalTrigger(minutes=15),
-            args=[user_id],
-            id=f"shift_monitor_{user_id}",
-            replace_existing=True
+            interval=timedelta(minutes=15),
+            first=timedelta(minutes=15),
+            chat_id=user_id,
+            name=f"shift_monitor_{user_id}"
         )
 
-        # Задача 2: Напоминание через 4 часа (нужен перерыв!)
-        job2 = self.scheduler.add_job(
+        # Задача 2: Напоминание через 4.5 часа
+        job2 = job_queue.run_repeating(
             self._remind_break,
-            trigger=IntervalTrigger(hours=4, minutes=30),
-            args=[user_id],
-            id=f"break_remind_{user_id}",
-            replace_existing=True
+            interval=timedelta(hours=4, minutes=30),
+            first=timedelta(hours=4, minutes=30),
+            chat_id=user_id,
+            name=f"break_remind_{user_id}"
         )
 
-        # Задача 3: Напоминание через 9 часов (лимит вождения за сутки)
-        job3 = self.scheduler.add_job(
+        # Задача 3: Напоминание через 9 часов
+        job3 = job_queue.run_repeating(
             self._remind_daily_limit,
-            trigger=IntervalTrigger(hours=9),
-            args=[user_id],
-            id=f"limit_remind_{user_id}",
-            replace_existing=True
+            interval=timedelta(hours=9),
+            first=timedelta(hours=9),
+            chat_id=user_id,
+            name=f"limit_remind_{user_id}"
         )
 
-        self.active_jobs[user_id] = [job1.id, job2.id, job3.id]
+        self.active_jobs[user_id] = [job1.name, job2.name, job3.name]
 
     def stop_shift_monitoring(self, user_id: int):
         """Остановить мониторинг смены"""
+        if _app_instance is None:
+            return
+
+        job_queue = _app_instance.job_queue
         if user_id in self.active_jobs:
-            for job_id in self.active_jobs[user_id]:
-                try:
-                    self.scheduler.remove_job(job_id)
-                except Exception:
-                    pass
+            for job_name in self.active_jobs[user_id]:
+                jobs = job_queue.get_jobs_by_name(job_name)
+                for job in jobs:
+                    job.schedule_removal()
             del self.active_jobs[user_id]
 
     def send_test_notification(self, user_id: int, delay_seconds: int = 30, message: str = "Тестовое уведомление"):
         """Отправить тестовое уведомление через delay_seconds секунд"""
+        if _app_instance is None:
+            return None
+
+        job_queue = _app_instance.job_queue
+        from utils.time_utils import now_minsk, TIMEZONE
+        
         run_time = datetime.now(TIMEZONE) + timedelta(seconds=delay_seconds)
         
-        job = self.scheduler.add_job(
-            self._send_notification_sync,
-            trigger=DateTrigger(run_date=run_time),
-            args=[user_id, message],
-            id=f"test_notification_{user_id}_{datetime.now().timestamp()}",
-            replace_existing=False
+        job = job_queue.run_once(
+            self._send_notification,
+            when=run_time,
+            chat_id=user_id,
+            data={"message": message},
+            name=f"test_notification_{user_id}_{datetime.now().timestamp()}"
         )
-        return job.id
+        return job.name
 
-    def _send_notification_sync(self, user_id: int, message: str):
-        """Отправить уведомление синхронно (для вызова из APScheduler)"""
-        if _bot_instance is None:
-            print(f"[_send_notification_sync] Бот не инициализирован!")
-            return
-
+    async def _send_notification(self, context):
+        """Отправить уведомление (async, вызывается JobQueue)"""
+        job = context.job
+        chat_id = job.chat_id
+        message = job.data.get("message", "Уведомление")
+        
         try:
-            # Создаём новый event loop для отправки
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            async def send_msg():
-                try:
-                    await _bot_instance.send_message(chat_id=user_id, text=message)
-                    print(f"[_send_notification_sync] Уведомление отправлено пользователю {user_id}")
-                except Exception as e:
-                    print(f"[_send_notification_sync] Ошибка отправки: {e}")
-            
-            loop.run_until_complete(send_msg())
-            loop.close()
-            
+            await context.bot.send_message(chat_id=chat_id, text=message)
+            print(f"[_send_notification] Уведомление отправлено пользователю {chat_id}")
         except Exception as e:
-            print(f"[_send_notification_sync] Критическая ошибка: {e}")
+            print(f"[_send_notification] Ошибка отправки: {e}")
 
-    def _check_shift_status(self, user_id: int):
+    async def _check_shift_status(self, context):
         """Проверить статус смены каждые 15 минут"""
         from utils.rto_logic import get_session
         from utils.time_utils import format_duration
 
-        session = get_session(user_id)
+        chat_id = context.job.chat_id
+        session = get_session(chat_id)
         status = session.get_status()
 
         if not status["active"]:
@@ -186,93 +177,64 @@ class AutoScheduler:
 
         # Проверка: усталость > 80%
         if status["fatigue"] >= 80:
-            self._send_notification_sync(
-                user_id,
-                "⚠️ Высокая усталость!\n😴 Усталость: 80%+\nРекомендуется завершить смену."
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="⚠️ Высокая усталость!\n😴 Усталость: 80%+\nРекомендуется завершить смену."
             )
 
         # Проверка: осталось мало времени до лимита недели
         weekly = session.get_weekly_stats()
         remaining_hours = weekly["remaining"].total_seconds() / 3600
         if remaining_hours < 5:
-            self._send_notification_sync(
-                user_id,
-                f"⚠️ Мало времени до лимита недели!\nОсталось: {remaining_hours:.1f} часов"
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text=f"⚠️ Мало времени до лимита недели!\nОсталось: {remaining_hours:.1f} часов"
             )
 
-    def _remind_break(self, user_id: int):
+    async def _remind_break(self, context):
         """Напомнить о перерыве через 4.5 часа"""
         from utils.rto_logic import get_session
 
-        session = get_session(user_id)
+        chat_id = context.job.chat_id
+        session = get_session(chat_id)
         status = session.get_status()
 
         if not status["active"]:
             return
 
         # Проверить, что всё ещё за рулём (нет перерыва)
-        active = db.get_active_shift(user_id)
+        active = db.get_active_shift(chat_id)
         if active and active["driving_sessions"]:
             last_session = active["driving_sessions"][-1]
             if last_session.get("end") is None:
                 # Всё ещё за рулём!
-                self._send_notification_sync(
-                    user_id,
-                    "🔴 РТО: Вы за рулём 4.5 часа!\n\n"
-                    "⚠️ Нужен перерыв 45 минут!\n"
-                    "Нажмите ☕ Перерыв в меню бота."
+                await context.bot.send_message(
+                    chat_id=chat_id,
+                    text="🔴 РТО: Вы за рулём 4.5 часа!\n\n"
+                         "⚠️ Нужен перерыв 45 минут!\n"
+                         "Нажмите ☕ Перерыв в меню бота."
                 )
 
-    def _remind_daily_limit(self, user_id: int):
+    async def _remind_daily_limit(self, context):
         """Напомнить о лимите 9 часов за сутки"""
         from utils.rto_logic import get_session
 
-        session = get_session(user_id)
+        chat_id = context.job.chat_id
+        session = get_session(chat_id)
         status = session.get_status()
 
         if not status["active"]:
             return
 
         if status["driving_today"].total_seconds() >= 9 * 3600:
-            self._send_notification_sync(
-                user_id,
-                "🔴 РТО: Лимит 9 часов в сутки достигнут!\n\n"
-                "⚠️ Немедленно завершите смену!\n"
-                "Нажмите ⏹️ Закончить смену в меню."
+            await context.bot.send_message(
+                chat_id=chat_id,
+                text="🔴 РТО: Лимит 9 часов в сутки достигнут!\n\n"
+                     "⚠️ Немедленно завершите смену!\n"
+                     "Нажмите ⏹️ Закончить смену в меню."
             )
-
-    def add_reminder(self, user_id: int, time_str: str, callback: Callable, message: str):
-        """Добавить напоминание по времени"""
-        try:
-            hour, minute = parse_schedule_time(time_str)
-        except ValueError:
-            return False
-
-        job = self.scheduler.add_job(
-            callback,
-            trigger=CronTrigger(hour=hour, minute=minute),
-            args=[user_id, message],
-            id=f"reminder_{user_id}_{time_str}",
-            replace_existing=True
-        )
-
-        if user_id not in self.reminders:
-            self.reminders[user_id] = []
-        self.reminders[user_id].append(job)
-        return True
-
-    def clear_reminders(self, user_id: int):
-        """Удалить все напоминания пользователя"""
-        if user_id in self.reminders:
-            for job in self.reminders[user_id]:
-                try:
-                    job.remove()
-                except Exception:
-                    pass
-            self.reminders[user_id] = []
 
     def remove_schedule(self, user_id: int):
         """Удалить расписание"""
         db.delete_schedule(user_id)
-        self.clear_reminders(user_id)
         self.stop_shift_monitoring(user_id)
