@@ -34,7 +34,6 @@ async def cmd_start_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"🚙 Авто: {car}\n\n"
                 f"Удачной работы! 🚕")
 
-        # Показать предупреждения (если есть)
         if result.get("warnings"):
             text += "\n\n⚠️ Внимание:\n"
             for w in result["warnings"]:
@@ -68,7 +67,6 @@ async def cmd_end_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         stats = result["stats"]
         
-        # Проверить достижения
         new_ach = achievements.check_achievements(
             user_id, "shift_end",
             {
@@ -94,10 +92,18 @@ async def cmd_end_shift(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text += f"• {ach['name']} — {ach['desc']}\n"
 
         keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            # Если это уведомление (не меню), отправляем новое сообщение
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
         keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
+        try:
+            await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            await query.message.reply_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def cmd_break_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -111,17 +117,24 @@ async def cmd_break_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result["ok"]:
         text = f"☕ Перерыв начат!\n🕐 {format_datetime(result['start'])}"
         
-        # Показать предупреждения (если есть)
         if result.get("warnings"):
             text += "\n\n⚠️ Внимание:\n"
             for w in result["warnings"]:
                 text += f"• {w}\n"
         
         keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            # Если это уведомление, отправляем новое сообщение
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
         keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
+        try:
+            await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            await query.message.reply_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def cmd_break_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -135,10 +148,17 @@ async def cmd_break_end(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if result["ok"]:
         text = f"▶️ Перерыв окончен!\n🕐 {format_datetime(result['end'])}"
         keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        
+        try:
+            await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            await query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     else:
         keyboard = [[InlineKeyboardButton("◀️ Меню", callback_data="back_menu")]]
-        await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
+        try:
+            await query.edit_message_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
+        except Exception:
+            await query.message.reply_text(f"❌ {result['error']}", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
