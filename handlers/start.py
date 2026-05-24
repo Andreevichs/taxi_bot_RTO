@@ -33,7 +33,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработчик кнопок меню"""
+    """Обработчик кнопок меню и уведомлений"""
     query = update.callback_query
     await query.answer()
 
@@ -89,6 +89,7 @@ async def back_to_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(MAIN_MENU_KEYBOARD)
         )
     except Exception:
+        # Если сообщение нельзя отредактировать (например, уведомление), отправляем новое
         await query.message.reply_text(
             "🚕 Главное меню\n\nВыберите действие:",
             reply_markup=InlineKeyboardMarkup(MAIN_MENU_KEYBOARD)
